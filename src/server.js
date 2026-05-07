@@ -3,7 +3,7 @@ const connectDB = require('./config/db');
 const logger = require('./config/logger');
 const { port, env, validateRuntimeConfig } = require('./config/env');
 const mongoose = require('mongoose');
-const { startJobs } = require('./jobs');
+const { startJobs, stopJobs } = require('./jobs');
 const telegramBot = require('./modules/telegram/telegram.bot');
 
 let server;
@@ -25,6 +25,7 @@ const shutdown = async (signal) => {
         server.close((err) => (err ? reject(err) : resolve()));
       });
     }
+    stopJobs();
     await mongoose.connection.close();
     clearTimeout(forceExitTimer);
     process.exit(0);

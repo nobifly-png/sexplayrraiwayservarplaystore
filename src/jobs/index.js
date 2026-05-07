@@ -67,4 +67,9 @@ const startJobs = () => {
   logger.info('Background jobs scheduled');
 };
 
-module.exports = { startJobs };
+const stopJobs = () => {
+  cron.getTasks().forEach((task) => task.stop());
+  logger.info('Background jobs stopped');
+};
+
+module.exports = { startJobs, stopJobs };

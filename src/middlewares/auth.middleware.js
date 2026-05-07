@@ -15,7 +15,7 @@ const authenticate = async (req, res, next) => {
     const token = authHeader.substring(7);
     const decoded = verifyAccessToken(token);
     
-    const user = await User.findById(decoded.userId);
+    const user = await User.findById(decoded.userId).select('-passwordHash -__v').lean();
     
     if (!user) {
       throw new UnauthorizedError('User not found');

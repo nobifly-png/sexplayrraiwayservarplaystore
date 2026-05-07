@@ -1,10 +1,10 @@
 const WithdrawalRequest = require('./withdrawalRequest.model');
 const walletService = require('../wallet/wallet.service');
 const Wallet = require('../wallet/wallet.model');
-const SystemSetting = require('../settings/systemSetting.model');
 const { BadRequestError, NotFoundError } = require('../../common/errors');
 const { WITHDRAWAL_STATUS, AUDIT_ACTION, AUDIT_ENTITY_TYPE } = require('../../common/enums');
 const { getMinimumWithdrawalAmount } = require('../../common/utils/settingsHelpers');
+const { getSetting } = require('../../common/utils/settingsCache');
 const auditService = require('../audit/audit.service');
 const mongoose = require('mongoose');
 
@@ -15,7 +15,7 @@ class WithdrawalService {
       let createdWithdrawal = null;
 
       await dbSession.withTransaction(async () => {
-        const minWithdrawalSetting = await SystemSetting.findOne({ key: 'minimumWithdrawalAmount' }).session(dbSession);
+        const minWithdrawalSetting = await getSetting('minimumWithdrawalAmount');
         const minAmount = getMinimumWithdrawalAmount(minWithdrawalSetting);
 
         if (amount < minAmount) {
@@ -91,11 +91,16 @@ class WithdrawalService {
 
     const skip = (page - 1) * limit;
 
-    return await WithdrawalRequest.find(query)
-      .populate('creatorId', 'name email')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
+    const [withdrawals, total] = await Promise.all([
+      WithdrawalRequest.find(query)
+        .populate('creatorId', 'name email')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      WithdrawalRequest.countDocuments(query)
+    ]);
+
+    return { withdrawals, total, page, limit };
   }
 
   async approveWithdrawal(withdrawalId, adminId, adminNote) {

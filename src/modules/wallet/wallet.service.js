@@ -1,23 +1,21 @@
 const Wallet = require('./wallet.model');
 const WalletTransaction = require('./walletTransaction.model');
-const SystemSetting = require('../settings/systemSetting.model');
+const mongoose = require('mongoose');
 const { generateIdempotencyKey } = require('../../common/utils');
 const { WALLET_TRANSACTION_TYPE } = require('../../common/enums');
 const { CURRENCY } = require('../../common/constants');
 const { WALLET_TX_MAX_LIMIT } = require('../../common/constants/pagination');
 const { getEarningsPerValidView } = require('../../common/utils/settingsHelpers');
+const { getSetting } = require('../../common/utils/settingsCache');
 const { BadRequestError } = require('../../common/errors');
-const mongoose = require('mongoose');
 
 class WalletService {
   async getOrCreateWallet(creatorId) {
-    let wallet = await Wallet.findOne({ creatorId });
-    
-    if (!wallet) {
-      wallet = await Wallet.create({ creatorId });
-    }
-
-    return wallet;
+    return await Wallet.findOneAndUpdate(
+      { creatorId },
+      { $setOnInsert: { creatorId } },
+      { upsert: true, new: true }
+    );
   }
 
   async getWallet(creatorId) {
@@ -25,7 +23,7 @@ class WalletService {
   }
 
   async creditEarnings(creatorId, sessionId, videoId) {
-    const earningsPerViewSetting = await SystemSetting.findOne({ key: 'earningsPerValidView' });
+    const earningsPerViewSetting = await getSetting('earningsPerValidView');
     const earningsAmount = getEarningsPerValidView(earningsPerViewSetting);
     const idempotencyKey = generateIdempotencyKey('earning', sessionId);
     const session = await mongoose.startSession();

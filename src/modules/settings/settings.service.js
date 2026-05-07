@@ -3,6 +3,7 @@ const { NotFoundError, BadRequestError } = require('../../common/errors');
 const { validateSettingValue, ALLOWED_SETTING_KEYS } = require('./settings.valueSchemas');
 const { AUDIT_ACTION, AUDIT_ENTITY_TYPE } = require('../../common/enums');
 const auditService = require('../audit/audit.service');
+const { invalidate: invalidateSettingCache } = require('../../common/utils/settingsCache');
 
 class SettingsService {
   async getAllSettings() {
@@ -33,7 +34,7 @@ class SettingsService {
       { value: result.value },
       { new: true, upsert: true }
     );
-
+    invalidateSettingCache(key);
     return setting;
   }
 
@@ -54,6 +55,7 @@ class SettingsService {
       SystemSetting.findOneAndUpdate({ key }, { value }, { new: true, upsert: true })
     );
     await Promise.all(updates);
+    normalized.forEach(({ key }) => invalidateSettingCache(key));
 
     auditService.logAction({
       userId: auditCtx.userId,

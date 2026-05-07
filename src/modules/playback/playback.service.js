@@ -10,8 +10,8 @@ const logger = require('../../config/logger');
 const { getDeviceType, generateIdempotencyKey } = require('../../common/utils');
 const { NotFoundError, BadRequestError } = require('../../common/errors');
 const { PLAYBACK_SESSION_STATUS, PLAYBACK_EVENT_TYPE, VIDEO_TYPE, VIDEO_STATUS, VIEW_TYPE } = require('../../common/enums');
-const SystemSetting = require('../settings/systemSetting.model');
 const { getMinimumWatchSeconds } = require('../../common/utils/settingsHelpers');
+const { getSetting } = require('../../common/utils/settingsCache');
 
 class PlaybackService {
   async createSession(linkId, ipAddress, userAgent, fingerprint) {
@@ -168,7 +168,7 @@ class PlaybackService {
     }
 
     const video = session.videoId;
-    const minWatchSetting = await SystemSetting.findOne({ key: 'minimumWatchSeconds' });
+    const minWatchSetting = await getSetting('minimumWatchSeconds');
     const minWatchSec = getMinimumWatchSeconds(minWatchSetting);
 
     let isValidView = false;

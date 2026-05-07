@@ -10,7 +10,11 @@ class AdminService {
     if (role) query.role = role;
     if (status) query.status = status;
     const skip = (page - 1) * limit;
-    return await User.find(query).select('-passwordHash').sort({ createdAt: -1 }).skip(skip).limit(limit);
+    const [users, total] = await Promise.all([
+      User.find(query).select('-passwordHash').sort({ createdAt: -1 }).skip(skip).limit(limit),
+      User.countDocuments(query)
+    ]);
+    return { users, total, page, limit };
   }
 
   async getUserById(userId) {

@@ -19,14 +19,19 @@ class AuthService {
     }
 
     const passwordHash = await bcrypt.hash(data.password, 12);
-    
-    const user = await User.create({
-      name: data.name,
-      email: data.email,
-      passwordHash,
-      role: USER_ROLES.CREATOR_ADMIN
-    });
-    // Public registration can never create SUPER_ADMIN (role not taken from client; stripUnknown on body).
+
+    let user;
+    try {
+      user = await User.create({
+        name: data.name,
+        email: data.email,
+        passwordHash,
+        role: USER_ROLES.CREATOR_ADMIN
+      });
+    } catch (err) {
+      if (err.code === 11000) throw new ConflictError('Email already registered');
+      throw err;
+    }
 
     await Wallet.create({ creatorId: user._id });
 

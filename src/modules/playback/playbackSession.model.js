@@ -78,7 +78,7 @@ const playbackSessionSchema = new mongoose.Schema({
 playbackSessionSchema.index({ videoId: 1 });
 playbackSessionSchema.index({ linkId: 1 });
 playbackSessionSchema.index({ creatorId: 1 });
-playbackSessionSchema.index({ ipAddress: 1, startedAt: 1 });
+playbackSessionSchema.index({ ipAddress: 1, videoId: 1, startedAt: 1 }); // fraud IP check
 playbackSessionSchema.index({ status: 1 });
 
 module.exports = mongoose.model('PlaybackSession', playbackSessionSchema);

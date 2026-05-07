@@ -1,13 +1,13 @@
 const PlaybackSession = require('../playback/playbackSession.model');
 const FraudFlag = require('./fraudFlag.model');
 const { FRAUD_TYPE, FRAUD_SEVERITY } = require('../../common/enums');
-const SystemSetting = require('../settings/systemSetting.model');
 const { getMaxViewsPerIpPerHour } = require('../../common/utils/settingsHelpers');
+const { getSetting } = require('../../common/utils/settingsCache');
 const logger = require('../../config/logger');
 
 class FraudService {
   async checkIpAbuse(ipAddress, videoId) {
-    const setting = await SystemSetting.findOne({ key: 'maxViewsPerIpPerHour' });
+    const setting = await getSetting('maxViewsPerIpPerHour');
     const maxPerHour = getMaxViewsPerIpPerHour(setting);
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
 

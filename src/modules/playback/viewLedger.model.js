@@ -51,5 +51,6 @@ const viewLedgerSchema = new mongoose.Schema({
 // Indexes (sessionId and idempotencyKey already indexed via unique: true)
 viewLedgerSchema.index({ videoId: 1 });
 viewLedgerSchema.index({ creatorId: 1, processedAt: 1 });
+viewLedgerSchema.index({ linkId: 1 });
 
 module.exports = mongoose.model('ViewLedger', viewLedgerSchema);

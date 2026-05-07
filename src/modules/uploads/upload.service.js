@@ -6,9 +6,9 @@ const UploadIntent = require('./uploadIntent.model');
 const { generateStorageKey, sanitizeUploadFileName } = require('../../common/utils');
 const { BadRequestError, NotFoundError } = require('../../common/errors');
 const { VIDEO_TYPE, VIDEO_STATUS, UPLOAD_STATUS } = require('../../common/enums');
-const SystemSetting = require('../settings/systemSetting.model');
 const { UPLOAD_INTENT_EXPIRY_MINUTES, SIGNED_URL_EXPIRY_SECONDS } = require('../../common/constants');
 const { getAllowedVideoMimeTypes, getMaxUploadSizeBytes } = require('../../common/utils/settingsHelpers');
+const { getSetting } = require('../../common/utils/settingsCache');
 
 const MIN_VERIFIED_OBJECT_BYTES = 1024;
 
@@ -42,13 +42,13 @@ class UploadService {
       throw new BadRequestError('Invalid file name');
     }
 
-    const mimeSetting = await SystemSetting.findOne({ key: 'allowedVideoMimeTypes' });
+    const mimeSetting = await getSetting('allowedVideoMimeTypes');
     const allowedMimes = getAllowedVideoMimeTypes(mimeSetting);
     if (!allowedMimes.includes(data.mimeType)) {
       throw new BadRequestError('Invalid file type for current system settings');
     }
 
-    const sizeSetting = await SystemSetting.findOne({ key: 'maxUploadSizeBytes' });
+    const sizeSetting = await getSetting('maxUploadSizeBytes');
     const maxBytes = getMaxUploadSizeBytes(sizeSetting);
     if (data.fileSize > maxBytes) {
       throw new BadRequestError('File size exceeds configured maximum limit');

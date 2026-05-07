@@ -12,11 +12,13 @@ class LinkService {
     if (video.status !== VIDEO_STATUS.READY) throw new BadRequestError('Video is not ready for sharing');
 
     let shortCode;
-    let isUnique = false;
-    while (!isUnique) {
+    let attempts = 0;
+    while (attempts < 10) {
       shortCode = generateShortCode();
       const existing = await Link.findOne({ shortCode });
-      if (!existing) isUnique = true;
+      if (!existing) break;
+      attempts++;
+      if (attempts === 10) throw new Error('Failed to generate unique short code, please retry');
     }
 
     const link = await Link.create({ videoId, creatorId, shortCode, isActive: true });
