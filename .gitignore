@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+yarn.lock
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pino-*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Build
+dist/
+build/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.log
+
+# Dev/test artifacts
+creator_login.tmp
+debug_500.js
+test_all_apis.js
+server_live.log
+server_test.log
+test_server.log
+
+# Coverage
+coverage/
+.nyc_output/
+
+# PM2
+.pm2/
