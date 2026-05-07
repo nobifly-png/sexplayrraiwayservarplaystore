@@ -146,8 +146,13 @@ class PlaybackService {
       meta: data.meta
     });
 
-    session.lastEventAt = new Date();
-    await session.save();
+    // Partial update — only changed fields, avoids full-doc write on every event
+    const $set = { lastEventAt: new Date() };
+    if (session.manualPlayStarted !== undefined) $set.manualPlayStarted = session.manualPlayStarted;
+    if (session.status !== undefined) $set.status = session.status;
+    if (session.lastPositionSeconds !== undefined) $set.lastPositionSeconds = session.lastPositionSeconds;
+    if (session.watchTimeSeconds !== undefined) $set.watchTimeSeconds = session.watchTimeSeconds;
+    await PlaybackSession.updateOne({ _id: session._id }, { $set });
 
     return event;
   }

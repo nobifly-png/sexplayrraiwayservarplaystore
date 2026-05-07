@@ -52,5 +52,7 @@ const viewLedgerSchema = new mongoose.Schema({
 viewLedgerSchema.index({ videoId: 1 });
 viewLedgerSchema.index({ creatorId: 1, processedAt: 1 });
 viewLedgerSchema.index({ linkId: 1 });
+viewLedgerSchema.index({ creatorId: 1, viewType: 1 }); // admin dashboard aggregation
+viewLedgerSchema.index({ createdAt: -1 }); // time series queries
 
 module.exports = mongoose.model('ViewLedger', viewLedgerSchema);

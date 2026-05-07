@@ -70,7 +70,8 @@ class UploadService {
     const command = new PutObjectCommand({
       Bucket: bucketName,
       Key: storageKey,
-      ContentType: data.mimeType
+      ContentType: data.mimeType,
+      ContentLength: data.fileSize
     });
 
     const signedUrl = await getSignedUrl(r2Client, command, {

@@ -9,11 +9,24 @@ const walletService = require('../wallet/wallet.service');
 const withdrawalService = require('../withdrawals/withdrawal.service');
 const User = require('../users/user.model');
 
-// In-memory session store: chatId -> { state, userId, email, pendingWithdrawalAmount }
+// In-memory session store: chatId -> { state, userId, email, pendingWithdrawalAmount, lastActivity }
+// Max 5000 sessions; LRU eviction on overflow to prevent unbounded RAM growth on Render.
+const MAX_SESSIONS = 5000;
+const SESSION_TTL_MS = 30 * 60 * 1000; // 30 min idle eviction
 const sessions = new Map();
 
+const evictStaleSessions = () => {
+  const cutoff = Date.now() - SESSION_TTL_MS;
+  for (const [id, s] of sessions) {
+    if ((s.lastActivity || 0) < cutoff) sessions.delete(id);
+  }
+};
+
 const getSession = (chatId) => sessions.get(chatId) || {};
-const setSession = (chatId, data) => sessions.set(chatId, { ...getSession(chatId), ...data });
+const setSession = (chatId, data) => {
+  if (sessions.size >= MAX_SESSIONS) evictStaleSessions();
+  sessions.set(chatId, { ...getSession(chatId), ...data, lastActivity: Date.now() });
+};
 const clearSession = (chatId) => sessions.delete(chatId);
 
 const STATES = {
