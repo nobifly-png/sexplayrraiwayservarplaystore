@@ -5,9 +5,8 @@
  * Optional env SUPER_ADMIN_ALLOWLIST: comma-separated extra emails (e.g. staging).
  */
 const CANONICAL_SUPER_ADMIN_EMAILS = [
-  'nitinchouhan1211@gmail.com',
-  'sethusethu5073@gmail.com',
-  'admin@clipnova.local'
+  'nitinchouhan@gmail.com',
+  'sethusethu5073@gmail.com'
 ];
 
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();

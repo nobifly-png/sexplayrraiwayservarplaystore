@@ -12,25 +12,35 @@ let isShuttingDown = false;
 const shutdown = async (signal) => {
   if (isShuttingDown) return;
   isShuttingDown = true;
-  logger.warn(`Received ${signal}, shutting down gracefully`);
+  logger.warn(`Received ${signal} — shutting down gracefully`);
 
   const forceExitTimer = setTimeout(() => {
-    logger.error('Force exiting after shutdown timeout');
+    logger.error('Force exit after shutdown timeout');
     process.exit(1);
-  }, 10000);
+  }, 15000);
 
   try {
-    if (server) {
-      await new Promise((resolve, reject) => {
-        server.close((err) => (err ? reject(err) : resolve()));
-      });
-    }
+    // 1. Stop Telegram polling first (prevents 409 on restart)
+    await telegramBot.stop(signal);
+
+    // 2. Stop cron jobs
     stopJobs();
+
+    // 3. Stop accepting new HTTP requests
+    if (server) {
+      await new Promise((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve()))
+      );
+    }
+
+    // 4. Close DB
     await mongoose.connection.close();
+
     clearTimeout(forceExitTimer);
+    logger.info('Graceful shutdown complete');
     process.exit(0);
-  } catch (error) {
-    logger.error('Graceful shutdown failed:', error);
+  } catch (err) {
+    logger.error({ err }, 'Graceful shutdown failed');
     clearTimeout(forceExitTimer);
     process.exit(1);
   }
@@ -47,6 +57,8 @@ const startServer = async () => {
     await connectDB();
 
     startJobs();
+
+    // Non-blocking, non-fatal — server starts regardless of bot status
     telegramBot.initialize().catch((err) =>
       logger.error({ err }, 'Telegram bot initialization failed (non-fatal)')
     );
@@ -54,22 +66,29 @@ const startServer = async () => {
     server = app.listen(port, () => {
       logger.info(`Server running in ${env} mode on port ${port}`);
     });
-  } catch (error) {
-    logger.error('Failed to start server:', error);
+
+    server.on('error', (err) => {
+      logger.error({ err }, 'HTTP server error');
+      shutdown('server-error');
+    });
+  } catch (err) {
+    logger.error({ err }, 'Failed to start server');
     process.exit(1);
   }
 };
 
+// ── Process signal handlers ──────────────────────────────────────────────────
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
 process.on('unhandledRejection', (err) => {
-  logger.error('Unhandled Rejection:', err);
+  logger.error({ err }, 'Unhandled Rejection');
   shutdown('unhandledRejection');
 });
 
 process.on('uncaughtException', (err) => {
-  logger.error('Uncaught Exception:', err);
+  logger.error({ err }, 'Uncaught Exception');
   shutdown('uncaughtException');
 });
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
 
 startServer();
