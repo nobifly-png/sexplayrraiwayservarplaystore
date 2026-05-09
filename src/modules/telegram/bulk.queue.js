@@ -72,7 +72,7 @@ const sendSummary = async (ctx, chatId, q) => {
     // Show max 30 links to avoid message too long
     const toShow = successResults.slice(0, 30);
     toShow.forEach((r, i) => {
-      text += `${i + 1}\\. *${escMd(r.title)}*\n🔗 \`${r.shareUrl}\`\n\n`;
+      text += `${i + 1}\\. *${escMd(r.title)}*\n🔗 ${r.shareUrl}\n\n`;
     });
     if (successResults.length > 30) {
       text += `_...and ${successResults.length - 30} more. Use /videos to see all._\n`;

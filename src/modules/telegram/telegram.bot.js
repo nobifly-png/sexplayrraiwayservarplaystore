@@ -1,6 +1,7 @@
 const { Telegraf, Markup } = require('telegraf');
 const telegramConfig = require('../../config/telegram');
 const { appUrl } = require('../../config/env');
+const FRONTEND_URL = process.env.FRONTEND_URL || 'https://clipnovawebistefronendvarsel-gyum.vercel.app';
 const logger = require('../../config/logger');
 
 const authService = require('../auth/auth.service');
@@ -211,18 +212,32 @@ class TelegramBotService {
   // ─── /videos ──────────────────────────────────────────────────────────────
   async _onVideos(ctx) {
     const session = getSession(ctx.chat.id);
-    if (!session.userId) return ctx.reply('Please /login first.');
+    if (!session.userId) return ctx.reply('🔐 Please /login first.');
 
-    const videos = await videoService.getCreatorVideos(session.userId, { page: 1, limit: 10 });
-    if (!videos.length) return ctx.reply('No videos yet. Forward a video to import one!');
+    let videos;
+    try {
+      videos = await videoService.getCreatorVideos(session.userId, { page: 1, limit: 10 });
+    } catch (err) {
+      logger.error({ err, userId: session.userId }, 'Bot: /videos fetch failed');
+      return ctx.reply('❌ Could not fetch videos. Please try again.');
+    }
 
-    const list = videos.map((v, i) =>
-      `${i + 1}. *${this._esc(v.title)}*\n` +
-      `   ${v.status} | ${v.type}\n` +
-      `   ID: \`${v._id}\``
-    ).join('\n\n');
+    if (!videos || !videos.length) return ctx.reply('📭 No videos uploaded yet.');
 
-    await ctx.reply(`📹 *Your Videos \\(latest 10\\):*\n\n${list}`, { parse_mode: 'MarkdownV2' });
+    // Fetch links for each READY video
+    const Link = require('../links/link.model');
+    const lines = await Promise.all(videos.map(async (v, i) => {
+      let watchLine = '';
+      if (v.status === VIDEO_STATUS.READY) {
+        const link = await Link.findOne({ videoId: v._id, isActive: true }).sort({ createdAt: -1 });
+        if (link) {
+          watchLine = `\n   🔗 ${FRONTEND_URL}/watch/${link.shortCode}`;
+        }
+      }
+      return `${i + 1}. *${this._esc(v.title)}*\n   Status: ${v.status}${watchLine}`;
+    }));
+
+    await ctx.reply(`📹 *Your Videos (latest 10):*\n\n${lines.join('\n\n')}`, { parse_mode: 'Markdown' });
   }
 
   // ─── /imports ─────────────────────────────────────────────────────────────
@@ -253,11 +268,11 @@ class TelegramBotService {
     if (!videoId) return ctx.reply('Usage: /link <videoId>\n\nGet IDs from /videos');
 
     const link = await linkService.createLink(session.userId, videoId);
-    const shareUrl = `${appUrl}/api/l/${link.shortCode}`;
+    const shareUrl = `${FRONTEND_URL}/watch/${link.shortCode}`;
 
     await ctx.reply(
-      `✅ *Share Link Created\\!*\n\n🔗 \`${this._esc(shareUrl)}\``,
-      { parse_mode: 'MarkdownV2' }
+      `✅ *Share Link Created!*\n\n🔗 ${shareUrl}`,
+      { parse_mode: 'Markdown' }
     );
   }
 
@@ -382,11 +397,11 @@ class TelegramBotService {
 
       // 3. Generate share link
       const link = await linkService.createLink(userId, video._id.toString());
-      const shareUrl = `${appUrl}/api/l/${link.shortCode}`;
+      const shareUrl = `${FRONTEND_URL}/watch/${link.shortCode}`;
 
       logger.info({ videoId: video._id, shareUrl }, 'Bot: video uploaded and link created');
 
-      return { title: video.title, shareUrl };
+      return { title: video.title, shareUrl, videoId: video._id };
     });
   }
 
@@ -475,7 +490,7 @@ class TelegramBotService {
 
     if (result.status === INGEST_STATUS.DONE) {
       const shareLink = await linkService.createLink(session.userId, result.video._id.toString()).catch(() => null);
-      const shareUrl = shareLink ? `${appUrl}/api/l/${shareLink.shortCode}` : null;
+      const shareUrl = shareLink ? `${FRONTEND_URL}/watch/${shareLink.shortCode}` : null;
 
       const reply =
         `✅ *Imported!*\n\n` +
@@ -512,7 +527,7 @@ class TelegramBotService {
     }
 
     const { link, video, isNew } = result;
-    const shareUrl = `${appUrl}/api/l/${link.shortCode}`;
+    const shareUrl = `${FRONTEND_URL}/watch/${link.shortCode}`;
 
     const reply =
       `${isNew ? '✅ *Your Personal Link Created!*' : '🔁 *You already have a link for this video:*'}\n\n` +
