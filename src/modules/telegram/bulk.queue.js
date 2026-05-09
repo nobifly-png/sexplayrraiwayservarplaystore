@@ -31,12 +31,13 @@ const sendVideoResult = async (ctx, chatId, result) => {
   await sleep(INTER_MSG_DELAY_MS);
   try {
     if (result.skipped) {
+      const msg = result.shareUrl
+        ? `✅ Already Imported\n\n🔗 Watch:\n${result.shareUrl}`
+        : `✅ Already Imported\n\nUse /videos to find your link.`;
+      await ctx.telegram.sendMessage(chatId, msg);
+    } else if (result.success !== false) {
       await ctx.telegram.sendMessage(chatId,
-        `🔁 Video already imported.\n\nUse /videos to view all your uploaded videos.`);
-    } else if (result.success) {
-      await ctx.telegram.sendMessage(chatId,
-        `✅ Upload Complete\n\n🎬 Title: ${result.title}\n\n🔗 Watch Link:\n${result.shareUrl}\n\n📊 Status: READY`,
-        { parse_mode: 'Markdown' });
+        `✅ Upload Complete\n\n🎬 Title: ${result.title}\n\n🔗 Watch Link:\n${result.shareUrl}\n\n📊 Status: READY`);
     } else {
       await ctx.telegram.sendMessage(chatId, `❌ Upload failed: ${result.error || 'Unknown error'}`);
     }

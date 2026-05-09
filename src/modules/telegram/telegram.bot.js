@@ -216,7 +216,7 @@ class TelegramBotService {
 
     let videos;
     try {
-      videos = await videoService.getCreatorVideos(session.userId, { page: 1, limit: 10 });
+      videos = await videoService.getCreatorVideos(session.userId, { page: 1, limit: 5 });
     } catch (err) {
       logger.error({ err, userId: session.userId }, 'Bot: /videos fetch failed');
       return ctx.reply('❌ Could not fetch videos. Please try again.');
@@ -224,18 +224,17 @@ class TelegramBotService {
 
     if (!videos || !videos.length) return ctx.reply('📭 No videos uploaded yet.');
 
-    // Fetch links for each READY video
     const Link = require('../links/link.model');
     const lines = await Promise.all(videos.map(async (v, i) => {
       let watchLine = '';
       if (v.status === VIDEO_STATUS.READY) {
         const link = await Link.findOne({ videoId: v._id, isActive: true }).sort({ createdAt: -1 });
-        if (link) watchLine = `\n   🔗 Watch:\n   ${FRONTEND_URL}/watch/${link.shortCode}`;
+        if (link) watchLine = `\n🔗 ${FRONTEND_URL}/watch/${link.shortCode}`;
       }
-      return `${i + 1}. *${this._esc(v.title)}*\n   📊 ${v.status}${watchLine}`;
+      return `${i + 1}. ${v.title}\n📊 ${v.status}${watchLine}`;
     }));
 
-    await ctx.reply(`🎬 *Your Videos (latest 10)*\n\n${lines.join('\n\n')}`, { parse_mode: 'Markdown' });
+    await ctx.reply(`🎬 Your Videos\n\n${lines.join('\n\n')}`);
   }
 
   // ─── /imports ─────────────────────────────────────────────────────────────
@@ -353,7 +352,11 @@ class TelegramBotService {
         const existing = await Video.findOne({ creatorId: userId, telegramFileUniqueId: fileUniqueId, isDeleted: false });
         if (existing) {
           logger.info({ fileUniqueId, videoId: existing._id }, 'Bot: duplicate video skipped');
-          return { skipped: true, title };
+          // Fetch existing watch link
+          const Link = require('../links/link.model');
+          const existingLink = await Link.findOne({ videoId: existing._id, isActive: true }).sort({ createdAt: -1 });
+          const shareUrl = existingLink ? `${FRONTEND_URL}/watch/${existingLink.shortCode}` : null;
+          return { skipped: true, title: existing.title, shareUrl };
         }
       }
 
@@ -481,9 +484,18 @@ class TelegramBotService {
         .catch(() => ctx.reply(reply, editOpts));
 
     } else if (result.status === INGEST_STATUS.DUPLICATE) {
-      await ctx.telegram.editMessageText(chatId, ackMsg.message_id, undefined,
-        `🔁 Already imported. Use /videos to see it.`, {})
-        .catch(() => {});
+      // Fetch existing video's watch link
+      const existingVideo = result.job?.videoId ? await Video.findById(result.job.videoId).catch(() => null) : null;
+      let dupMsg = '✅ Already Imported\n\n🔗 Watch:\n';
+      if (existingVideo) {
+        const Link = require('../links/link.model');
+        const existingLink = await Link.findOne({ videoId: existingVideo._id, isActive: true }).sort({ createdAt: -1 });
+        dupMsg += existingLink ? `${FRONTEND_URL}/watch/${existingLink.shortCode}` : '(link not found — use /videos)';
+      } else {
+        dupMsg = '✅ Already Imported\n\nUse /videos to find your link.';
+      }
+      await ctx.telegram.editMessageText(chatId, ackMsg.message_id, undefined, dupMsg, {})
+        .catch(() => ctx.reply(dupMsg));
 
     } else {
       await ctx.telegram.editMessageText(chatId, ackMsg.message_id, undefined,
