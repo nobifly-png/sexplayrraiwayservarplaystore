@@ -1,17 +1,20 @@
 const helmet = require('helmet');
 const cors = require('cors');
-const { corsOrigins } = require('../config/env');
+const { corsOrigins, env } = require('../config/env');
+const logger = require('../config/logger');
 
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, curl, server-to-server)
+    // No origin = mobile app, curl, server-to-server — allow
     if (!origin) return callback(null, true);
     if (corsOrigins.includes(origin)) return callback(null, true);
-    callback(new Error(`CORS: origin ${origin} not allowed`));
+    logger.warn({ origin }, 'CORS: rejected origin');
+    callback(new Error('Not allowed by CORS'));
   },
-  credentials: true,
-  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID']
+  credentials: false,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 200 // return 200 for OPTIONS preflight (not 204)
 };
 
 const helmetOptions = {

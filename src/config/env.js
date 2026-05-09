@@ -49,9 +49,9 @@ const config = {
     publicBaseUrl: process.env.R2_PUBLIC_BASE_URL || process.env.R2_PUBLIC_URL,
     region: process.env.R2_REGION || 'auto'
   },
-  /** Comma-separated origins; first used as default in APP_URL examples */
+  /** Comma-separated allowed origins from ALLOWED_ORIGINS (preferred) or legacy CORS_ORIGIN */
   corsOrigins: (() => {
-    const raw = process.env.CORS_ORIGIN || 'http://localhost:3000';
+    const raw = process.env.ALLOWED_ORIGINS || process.env.CORS_ORIGIN || 'http://localhost:5175';
     return raw
       .split(',')
       .map((s) => s.trim())
@@ -115,7 +115,7 @@ const validateRuntimeConfig = () => {
 
   if (config.env === 'production') {
     if (config.corsOrigins.some((o) => o === '*')) {
-      errors.push('CORS_ORIGIN cannot be * in production');
+      errors.push('ALLOWED_ORIGINS cannot contain * in production');
     }
 
     const r2 = config.r2;
