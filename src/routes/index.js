@@ -20,6 +20,12 @@ const { telegram, env: nodeEnv } = require('../config/env');
 
 const router = express.Router();
 
+// ── Public routes (NO auth) — registered BEFORE all protected routers ─────────
+router.get('/l/:shortCode', validateParams(shortCodeParam), linkController.resolveShortLink);
+router.get('/videos/watch/:shortCode', validateParams(shortCodeParam), linkController.resolveShortLink);
+router.post('/links/resolve', linkController.resolveByUrl);
+
+// ── Protected routers ─────────────────────────────────────────────────────────
 router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
 router.use('/videos', videoRoutes);
@@ -32,8 +38,6 @@ router.use('/analytics', analyticsRoutes);
 router.use('/admin', adminRoutes);
 router.use('/settings', settingsRoutes);
 router.use('/fraud', fraudRoutes);
-
-router.get('/l/:shortCode', validateParams(shortCodeParam), linkController.resolveShortLink);
 
 router.get('/health', (req, res) => {
   const base = {
