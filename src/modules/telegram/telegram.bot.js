@@ -230,14 +230,12 @@ class TelegramBotService {
       let watchLine = '';
       if (v.status === VIDEO_STATUS.READY) {
         const link = await Link.findOne({ videoId: v._id, isActive: true }).sort({ createdAt: -1 });
-        if (link) {
-          watchLine = `\n   🔗 ${FRONTEND_URL}/watch/${link.shortCode}`;
-        }
+        if (link) watchLine = `\n   🔗 Watch:\n   ${FRONTEND_URL}/watch/${link.shortCode}`;
       }
-      return `${i + 1}. *${this._esc(v.title)}*\n   Status: ${v.status}${watchLine}`;
+      return `${i + 1}. *${this._esc(v.title)}*\n   📊 ${v.status}${watchLine}`;
     }));
 
-    await ctx.reply(`📹 *Your Videos (latest 10):*\n\n${lines.join('\n\n')}`, { parse_mode: 'Markdown' });
+    await ctx.reply(`🎬 *Your Videos (latest 10)*\n\n${lines.join('\n\n')}`, { parse_mode: 'Markdown' });
   }
 
   // ─── /imports ─────────────────────────────────────────────────────────────
@@ -317,72 +315,54 @@ class TelegramBotService {
   }
 
   // ─── VIDEO FILE HANDLER ───────────────────────────────────────────────────
-  // Triggered when user forwards/sends a Telegram native video
   async _onVideoFile(ctx) {
     const session = getSession(ctx.chat.id);
-    if (!session.userId) {
-      return ctx.reply('🔐 Please /login first to upload videos.');
-    }
+    if (!session.userId) return ctx.reply('🔐 Please /login first to upload videos.');
 
     const msg = ctx.message;
     const video = msg.video;
     const caption = msg.caption || '';
+    const title = caption.trim() || video.file_name || `Video ${new Date().toISOString().slice(0, 10)}`;
 
-    // Title: caption first, then file_name, then fallback
-    const title = caption.trim() ||
-                  video.file_name ||
-                  `Video ${new Date().toISOString().slice(0, 10)}`;
-
-    const fileId = video.file_id;
-    const mimeType = video.mime_type || 'video/mp4';
-    const fileSize = video.file_size;
-
-    logger.info({ chatId: ctx.chat.id, fileId, fileSize, title }, 'Bot: video file received');
-
-    this._enqueueUpload(ctx, session.userId, fileId, title, mimeType, fileSize);
+    logger.info({ chatId: ctx.chat.id, fileId: video.file_id, title }, 'Bot: video file received');
+    this._enqueueUpload(ctx, session.userId, video.file_id, video.file_unique_id, title, video.mime_type || 'video/mp4', video.file_size);
   }
 
   // ─── DOCUMENT FILE HANDLER ────────────────────────────────────────────────
-  // Triggered for any file — mkv, avi, mp4 sent as document, etc.
   async _onDocumentFile(ctx) {
     const session = getSession(ctx.chat.id);
-    if (!session.userId) {
-      return ctx.reply('🔐 Please /login first to upload videos.');
-    }
+    if (!session.userId) return ctx.reply('🔐 Please /login first to upload videos.');
 
     const msg = ctx.message;
     const doc = msg.document;
     const caption = msg.caption || '';
+    const title = caption.trim() || (doc.file_name ? doc.file_name.replace(/\.[^.]+$/, '') : '') || `Video ${new Date().toISOString().slice(0, 10)}`;
 
-    const title = caption.trim() ||
-                  (doc.file_name ? doc.file_name.replace(/\.[^.]+$/, '') : '') ||
-                  `Video ${new Date().toISOString().slice(0, 10)}`;
-
-    const fileId = doc.file_id;
-    const mimeType = doc.mime_type || 'application/octet-stream';
-    const fileSize = doc.file_size;
-
-    logger.info({ chatId: ctx.chat.id, fileId, fileSize, title }, 'Bot: document file received');
-
-    this._enqueueUpload(ctx, session.userId, fileId, title, mimeType, fileSize);
+    logger.info({ chatId: ctx.chat.id, fileId: doc.file_id, title }, 'Bot: document file received');
+    this._enqueueUpload(ctx, session.userId, doc.file_id, doc.file_unique_id, title, doc.mime_type || 'application/octet-stream', doc.file_size);
   }
 
   // ─── Enqueue upload job ───────────────────────────────────────────────────
-  _enqueueUpload(ctx, userId, fileId, title, mimeType, fileSize) {
+  _enqueueUpload(ctx, userId, fileId, fileUniqueId, title, mimeType, fileSize) {
     const chatId = ctx.chat.id;
     const botToken = telegramConfig.botToken;
 
     enqueue(ctx, String(chatId), title, async () => {
-      // 1. Upload Telegram file → R2
+      // 1. Duplicate check via file_unique_id
+      if (fileUniqueId) {
+        const existing = await Video.findOne({ creatorId: userId, telegramFileUniqueId: fileUniqueId, isDeleted: false });
+        if (existing) {
+          logger.info({ fileUniqueId, videoId: existing._id }, 'Bot: duplicate video skipped');
+          return { skipped: true, title };
+        }
+      }
+
+      // 2. Upload Telegram file → R2
       const { storageKey, fileSize: uploadedSize, publicUrl } = await uploadTelegramFileToR2({
-        botToken,
-        fileId,
-        creatorId: userId,
-        fileName: title,
-        mimeType
+        botToken, fileId, creatorId: userId, fileName: title, mimeType
       });
 
-      // 2. Create Video record in DB
+      // 3. Create Video record
       const video = await Video.create({
         creatorId: userId,
         title: title.slice(0, 200),
@@ -392,16 +372,16 @@ class TelegramBotService {
         fileName: title,
         mimeType,
         fileSize: uploadedSize || fileSize,
-        status: VIDEO_STATUS.READY
+        status: VIDEO_STATUS.READY,
+        telegramFileUniqueId: fileUniqueId || undefined
       });
 
-      // 3. Generate share link
+      // 4. Generate share link
       const link = await linkService.createLink(userId, video._id.toString());
       const shareUrl = `${FRONTEND_URL}/watch/${link.shortCode}`;
 
       logger.info({ videoId: video._id, shareUrl }, 'Bot: video uploaded and link created');
-
-      return { title: video.title, shareUrl, videoId: video._id };
+      return { title: video.title, shareUrl };
     });
   }
 

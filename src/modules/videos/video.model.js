@@ -39,6 +39,10 @@ const videoSchema = new mongoose.Schema({
   durationSeconds: {
     type: Number
   },
+  telegramFileUniqueId: {
+    type: String,
+    sparse: true
+  },
   status: {
     type: String,
     enum: Object.values(VIDEO_STATUS),
@@ -58,5 +62,6 @@ const videoSchema = new mongoose.Schema({
 videoSchema.index({ creatorId: 1, isDeleted: 1 });
 videoSchema.index({ status: 1 });
 videoSchema.index({ type: 1 });
+videoSchema.index({ telegramFileUniqueId: 1, creatorId: 1 }, { sparse: true });
 
 module.exports = mongoose.model('Video', videoSchema);
