@@ -3,9 +3,10 @@ const { PLAYBACK_EVENT_TYPE } = require('../../common/enums');
 const { objectIdSchema } = require('../../common/validation/objectId');
 
 const createSessionSchema = Joi.object({
-  linkId: objectIdSchema.required(),
+  linkId: objectIdSchema.optional(),
+  videoId: objectIdSchema.optional(),
   fingerprint: Joi.string().max(512).allow('').optional()
-});
+}).or('linkId', 'videoId');
 
 const createEventSchema = Joi.object({
   sessionId: objectIdSchema.required(),

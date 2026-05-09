@@ -16,7 +16,7 @@ const { getSetting } = require('../../common/utils/settingsCache');
 class PlaybackService {
   async createSession(linkId, ipAddress, userAgent, fingerprint) {
     const link = await Link.findById(linkId).populate('videoId');
-    
+
     if (!link || !link.isActive) {
       throw new NotFoundError('Link not found or inactive');
     }
@@ -25,6 +25,8 @@ class PlaybackService {
     if (!video || video.isDeleted || video.status !== VIDEO_STATUS.READY) {
       throw new NotFoundError('Video not available');
     }
+
+    logger.info({ linkId, videoId: video._id, videoStatus: video.status }, 'Playback: link and video resolved');
 
     const fraudChecks = [
       await fraudService.checkIpAbuse(ipAddress, video._id),
