@@ -56,6 +56,19 @@ const videoSchema = new mongoose.Schema({
     type: String,
     sparse: true
   },
+  uploadSource: {
+    type: String,
+    enum: ['WEB', 'TELEGRAM_DIRECT', 'TELEGRAM_LINK', 'TELEGRAM_RESHARE', 'API'],
+    default: 'WEB'
+  },
+  duplicatedFrom: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Video'
+  },
+  createdViaBot: {
+    type: Boolean,
+    default: false
+  },
   status: {
     type: String,
     enum: Object.values(VIDEO_STATUS),
