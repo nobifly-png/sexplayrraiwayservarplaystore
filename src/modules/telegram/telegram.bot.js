@@ -72,16 +72,23 @@ class TelegramBotService {
     try {
       this.bot = new Telegraf(telegramConfig.botToken);
       this._registerHandlers();
-      this.bot.launch().catch((err) => {
-        logger.error({ errMsg: err.message }, 'Telegram polling error');
-        this._launched = false;
-        this._launching = false;
-      });
+
+      // dropPendingUpdates: true clears any queued updates from previous instance.
+      // This prevents 409 Conflict on Render restarts where old polling is still alive.
+      await this.bot.launch({ dropPendingUpdates: true });
+
       this._launched = true;
-      logger.info('Telegram bot started');
-    } catch (err) {
-      logger.error({ err }, 'Telegram bot failed to initialize');
       this._launching = false;
+      logger.info('Telegram bot started');
+
+      // Handle polling errors without crashing
+      this.bot.catch((err) => {
+        logger.error({ errMsg: err.message }, 'Telegram polling error');
+      });
+    } catch (err) {
+      this._launching = false;
+      this._launched = false;
+      logger.error({ errMsg: err.message }, 'Telegram bot failed to initialize');
     }
   }
 

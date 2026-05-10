@@ -112,14 +112,22 @@ const uploadTelegramVideo = async ({ userId, fileId, fileUniqueId, title, mimeTy
 
   logger.info({ videoId: video._id }, 'Pipeline: video record created');
 
-  // Thumbnail — fire and forget, never blocks response
-  attachThumbnail(video, pendingThumb, downloadUrl).catch(() => {});
+  // Thumbnail — await manual pending thumb so it's ready for bot response.
+  // FFmpeg auto-gen is fire-and-forget (slow, non-blocking).
+  if (pendingThumb?.buffer) {
+    await attachThumbnail(video, pendingThumb, null);
+  } else {
+    attachThumbnail(video, null, downloadUrl).catch(() => {});
+  }
 
   const link = await linkService.createLink(userId, video._id.toString());
   const shareUrl = `${FRONTEND_URL}/watch/${link.shortCode}`;
 
+  // Re-fetch thumbnailUrl from DB in case async attachment updated it
+  const finalVideo = await Video.findById(video._id).lean();
+
   logger.info({ videoId: video._id, shareUrl }, 'Pipeline: Telegram upload complete');
-  return { video, link, shareUrl };
+  return { video: finalVideo, link, shareUrl };
 };
 
 /* ─── PIPELINE 2: ClipNova link duplication ────────────────────────────── */
@@ -202,8 +210,11 @@ const duplicateClipNovaVideo = async ({ userId, shortCode, pendingThumb }) => {
   const link = await linkService.createLink(userId, newVideo._id.toString());
   const shareUrl = `${FRONTEND_URL}/watch/${link.shortCode}`;
 
+  // Re-fetch to get latest thumbnailUrl
+  const finalVideo = await Video.findById(newVideo._id).lean();
+
   logger.info({ newVideoId: newVideo._id, shareUrl }, 'Pipeline: duplication complete');
-  return { video: newVideo, link, shareUrl, wasAlreadyOwned: false };
+  return { video: finalVideo, link, shareUrl, wasAlreadyOwned: false };
 };
 
 module.exports = { uploadTelegramVideo, duplicateClipNovaVideo, attachThumbnail, getTelegramFileUrl };

@@ -30,9 +30,13 @@ const SUPPORTED_SOURCES = {
 // Ordered: most specific first — ClipNova links checked FIRST
 const SOURCE_PATTERNS = [
   {
-    // Matches: https://anything.com/api/l/SHORTCODE  or  http://anything/l/SHORTCODE
+    // Matches:
+    //   https://anything.com/watch/SHORTCODE
+    //   https://anything.vercel.app/watch/SHORTCODE
+    //   https://anything.com/api/l/SHORTCODE
+    //   https://anything.com/l/SHORTCODE
     source: SUPPORTED_SOURCES.CLIPNOVA,
-    pattern: /https?:\/\/[^\s"'<>]+\/(?:api\/)?l\/([A-Za-z0-9]{4,32})(?:[\s"'<>?#]|$)/i
+    pattern: /https?:\/\/[^\s"'<>]+\/(?:watch|(?:api\/)?l)\/([A-Za-z0-9]{4,32})(?:[\s"'<>?#/]|$)/i
   },
   {
     source: SUPPORTED_SOURCES.TERABOX,

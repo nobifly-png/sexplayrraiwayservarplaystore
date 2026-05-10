@@ -1,5 +1,5 @@
 const { detectVideoLink, SUPPORTED_SOURCES } = require('./link.parser');
-const { setPending, consumePending, hasPending } = require('./pendingThumb.cache');
+const { setPending, consumePending } = require('./pendingThumb.cache');
 const { uploadTelegramVideo, duplicateClipNovaVideo } = require('./upload.pipeline');
 const { enqueue } = require('./bulk.queue');
 const { isRateLimited } = require('./bot.ratelimit');
@@ -11,12 +11,11 @@ const telegramConfig = require('../../config/telegram');
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://clipnovawebistefronendvarsel-gyum.vercel.app';
 const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
 
-/* ─── Download Telegram photo to buffer ────────────────────────────────── */
+/* ─── Download Telegram photo to buffer ─────────────────────────────────── */
 const downloadTelegramPhoto = async (ctx, photoArray) => {
   try {
     const https = require('https');
-    // Pick highest resolution photo
-    const photo = photoArray[photoArray.length - 1];
+    const photo = photoArray[photoArray.length - 1]; // highest resolution
     const botToken = telegramConfig.botToken;
 
     const fileInfo = await new Promise((resolve, reject) => {
@@ -52,31 +51,46 @@ const downloadTelegramPhoto = async (ctx, photoArray) => {
   }
 };
 
-/* ─── Route: Photo received ─────────────────────────────────────────────── */
+/* ─── Safe sendPhoto with text fallback ─────────────────────────────────── */
+const safeSendPhoto = async (ctx, chatId, thumbUrl, caption) => {
+  if (thumbUrl) {
+    try {
+      await ctx.telegram.sendPhoto(chatId, thumbUrl, { caption });
+      return;
+    } catch (err) {
+      logger.warn({ errMsg: err.message }, 'MessageRouter: sendPhoto failed, falling back to sendMessage');
+    }
+  }
+  await ctx.telegram.sendMessage(chatId, caption).catch(() => {});
+};
+
+/* ─── Route: Photo received ──────────────────────────────────────────────── */
 const handlePhoto = async (ctx, session) => {
   if (!session.userId) return ctx.reply('🔐 Please /login first.');
 
   const photo = ctx.message.photo;
   if (!photo?.length) return;
 
-  await ctx.reply('🖼 Thumbnail received! Now send your video or ClipNova link within 5 minutes.');
-
   const downloaded = await downloadTelegramPhoto(ctx, photo);
   if (downloaded) {
     setPending(ctx.chat.id, downloaded.buffer, downloaded.mimeType);
     logger.info({ chatId: ctx.chat.id }, 'MessageRouter: pending thumbnail cached');
+    await ctx.reply('🖼 Thumbnail received! Now send your video or ClipNova link within 5 minutes.');
+  } else {
+    await ctx.reply('⚠️ Could not process thumbnail. Please try again.');
   }
 };
 
-/* ─── Route: Video/Document file received ───────────────────────────────── */
+/* ─── Route: Video/Document file received ────────────────────────────────── */
 const handleVideoFile = (ctx, session, fileInfo) => {
   const { fileId, fileUniqueId, title, mimeType, fileSize } = fileInfo;
   const chatId = ctx.chat.id;
 
-  if (!session.userId) return ctx.reply('🔐 Please /login first.');
-  if (isRateLimited(chatId)) return ctx.reply('⚠️ Too many uploads. Please wait a minute.');
-  if (fileSize && fileSize > MAX_FILE_SIZE) return ctx.reply('❌ File too large. Maximum 2GB allowed.');
+  if (!session.userId) { ctx.reply('🔐 Please /login first.').catch(() => {}); return; }
+  if (isRateLimited(chatId)) { ctx.reply('⚠️ Too many uploads. Please wait a minute.').catch(() => {}); return; }
+  if (fileSize && fileSize > MAX_FILE_SIZE) { ctx.reply('❌ File too large. Maximum 2GB allowed.').catch(() => {}); return; }
 
+  // Consume pending thumb NOW (before async enqueue) so it belongs to this user/upload
   const pendingThumb = consumePending(chatId);
 
   enqueue(ctx, String(chatId), title, async () => {
@@ -105,12 +119,14 @@ const handleVideoFile = (ctx, session, fileInfo) => {
   });
 };
 
-/* ─── Route: ClipNova link received ────────────────────────────────────── */
+/* ─── Route: ClipNova /watch/ link received ─────────────────────────────── */
 const handleClipNovaLink = async (ctx, session, shortCode) => {
   const chatId = ctx.chat.id;
 
   if (!session.userId) return ctx.reply('🔐 Please /login first.');
   if (isRateLimited(chatId)) return ctx.reply('⚠️ Too many requests. Please wait a minute.');
+
+  logger.info({ chatId, shortCode }, 'MessageRouter: ClipNova link detected');
 
   const pendingThumb = consumePending(chatId);
   const ackMsg = await ctx.reply('⏳ Processing ClipNova link...');
@@ -127,22 +143,21 @@ const handleClipNovaLink = async (ctx, session, shortCode) => {
       ? `🔁 You already have this video!\n\n🎬 ${video.title}\n🔗 ${shareUrl}`
       : `✅ Upload Complete\n\n🎬 ${video.title}\n🔗 ${shareUrl}`;
 
-    await ctx.telegram.editMessageText(chatId, ackMsg.message_id, undefined, caption, {})
-      .catch(() => {});
+    // Delete ack message, then send photo (or text fallback)
+    await ctx.telegram.deleteMessage(chatId, ackMsg.message_id).catch(() => {});
+    await safeSendPhoto(ctx, chatId, thumbUrl, caption);
 
-    if (thumbUrl) {
-      await ctx.telegram.sendPhoto(chatId, thumbUrl, { caption }).catch(() => {});
-    }
   } catch (err) {
     logger.error({ err, shortCode }, 'MessageRouter: ClipNova duplication failed');
     const errMsg = err.message?.includes('not found') || err.message?.includes('not available')
       ? `❌ ${err.message}`
       : '❌ Upload failed. Please try again.';
-    await ctx.telegram.editMessageText(chatId, ackMsg.message_id, undefined, errMsg, {}).catch(() => {});
+    await ctx.telegram.editMessageText(chatId, ackMsg.message_id, undefined, errMsg, {})
+      .catch(() => ctx.reply(errMsg).catch(() => {}));
   }
 };
 
-/* ─── Route: External link (TeraBox, Dailymotion, etc.) ────────────────── */
+/* ─── Route: External link (TeraBox, Dailymotion, etc.) ─────────────────── */
 const handleExternalLink = async (ctx, session, detected, ingestService, linkService) => {
   const chatId = ctx.chat.id;
 
@@ -169,7 +184,8 @@ const handleExternalLink = async (ctx, session, detected, ingestService, linkSer
       const shareLink = await linkService.createLink(session.userId, result.video._id.toString()).catch(() => null);
       const shareUrl = shareLink ? `${FRONTEND_URL}/watch/${shareLink.shortCode}` : null;
       const reply = `✅ Imported!\n\n📹 ${result.video.title}\n${shareUrl ? `🔗 ${shareUrl}` : ''}`;
-      await ctx.telegram.editMessageText(chatId, ackMsg.message_id, undefined, reply, {}).catch(() => ctx.reply(reply));
+      await ctx.telegram.editMessageText(chatId, ackMsg.message_id, undefined, reply, {})
+        .catch(() => ctx.reply(reply).catch(() => {}));
 
     } else if (result.status === INGEST_STATUS.DUPLICATE) {
       const existingVideo = result.job?.videoId
@@ -181,7 +197,8 @@ const handleExternalLink = async (ctx, session, detected, ingestService, linkSer
       } else {
         dupMsg += 'Use /videos to find your link.';
       }
-      await ctx.telegram.editMessageText(chatId, ackMsg.message_id, undefined, dupMsg, {}).catch(() => ctx.reply(dupMsg));
+      await ctx.telegram.editMessageText(chatId, ackMsg.message_id, undefined, dupMsg, {})
+        .catch(() => ctx.reply(dupMsg).catch(() => {}));
 
     } else {
       await ctx.telegram.editMessageText(chatId, ackMsg.message_id, undefined,
