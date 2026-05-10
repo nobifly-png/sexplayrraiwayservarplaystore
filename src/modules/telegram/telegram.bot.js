@@ -67,25 +67,54 @@ class TelegramBotService {
       logger.warn('Telegram bot already launching — skipping duplicate init');
       return;
     }
+
     this._launching = true;
+    logger.info('Telegram bot initializing');
+
     try {
       this.bot = new Telegraf(telegramConfig.botToken);
+
+      // ── Global error handler — MUST be registered before launch ──────────
+      // Without this, any handler error silently kills polling.
+      this.bot.catch((err, ctx) => {
+        logger.error({
+          errMsg: err.message,
+          stack: err.stack,
+          updateType: ctx?.updateType,
+          chatId: ctx?.chat?.id
+        }, 'Telegram bot uncaught handler error');
+        ctx?.reply('Something went wrong. Please try again.').catch(() => {});
+      });
+
+      // ── Raw update logger — confirms updates are reaching the bot ─────────
+      this.bot.use(async (ctx, next) => {
+        logger.info({
+          updateType: ctx.updateType,
+          chatId: ctx.chat?.id,
+          messageKeys: Object.keys(ctx.message || {})
+        }, 'Telegram raw update received');
+        return next();
+      });
+
       this._registerHandlers();
 
-      // dropPendingUpdates prevents 409 Conflict on Render restarts
-      await this.bot.launch({ dropPendingUpdates: true });
+      // ── CRITICAL FIX: bot.launch() in polling mode NEVER resolves ─────────
+      // Do NOT await it — it blocks forever. Use .catch() for error handling.
+      this.bot.launch({ dropPendingUpdates: true }).catch((err) => {
+        logger.error({ errMsg: err.message }, 'Telegram bot launch error');
+        this._launched = false;
+        this._launching = false;
+      });
 
+      // Mark as launched immediately after calling launch()
       this._launched = true;
       this._launching = false;
-      logger.info('Telegram bot started');
+      logger.info('Telegram bot launched successfully');
 
-      this.bot.catch((err) => {
-        logger.error({ errMsg: err.message }, 'Telegram polling error');
-      });
     } catch (err) {
       this._launching = false;
       this._launched = false;
-      logger.error({ errMsg: err.message }, 'Telegram bot failed to initialize');
+      logger.error({ errMsg: err.message, stack: err.stack }, 'Telegram bot failed to initialize');
     }
   }
 
@@ -112,23 +141,15 @@ class TelegramBotService {
     bot.command('withdraw', (ctx) => this._safe(ctx, () => this._onWithdrawCmd(ctx)));
     bot.command('cancel', (ctx) => this._safe(ctx, () => this._onCancel(ctx)));
 
-    // Single entry point for ALL non-command messages.
-    // routeMessage handles priority internally:
-    //   1. ClipNova link in text OR caption (even if photo present)
-    //   2. Photo only (no link) -> cache pending thumbnail
-    //   3. Video / Document -> upload pipeline
-    //   4. External links -> ingest pipeline
+    // Single entry point for ALL non-command messages
     bot.on('message', (ctx) => this._safe(ctx, () => this._onAnyMessage(ctx)));
-
-    bot.catch((err, ctx) => {
-      logger.error({ errMsg: err.message, chatId: ctx?.chat?.id }, 'Bot handler error');
-      ctx?.reply('Something went wrong. Please try again.').catch(() => {});
-    });
   }
 
   _safe = async (ctx, fn) => {
-    try { await fn(); } catch (err) {
-      logger.error({ err, chatId: ctx?.chat?.id }, 'Handler threw');
+    try {
+      await fn();
+    } catch (err) {
+      logger.error({ errMsg: err.message, stack: err.stack, chatId: ctx?.chat?.id }, 'Handler threw');
       ctx?.reply('An error occurred. Please try again.').catch(() => {});
     }
   };
@@ -311,7 +332,7 @@ class TelegramBotService {
     const session = getSession(chatId);
     const text = (msg.text || msg.caption || '').trim();
 
-    // State machine runs first — login/withdrawal flow
+    // State machine first — login/withdrawal flow
     if (session.state === STATES.AWAIT_EMAIL) {
       if (!text) return ctx.reply('Please enter your email:');
       setSession(chatId, { email: text, state: STATES.AWAIT_PASSWORD });
@@ -331,15 +352,10 @@ class TelegramBotService {
       return this._processWithdrawal(ctx, chatId, session, text);
     }
 
-    // Delegate ALL media + link routing to routeMessage
-    // Priority inside routeMessage:
-    //   1. ClipNova link in caption/text (even if photo present) → duplicate immediately
-    //   2. Photo only → cache pending thumbnail
-    //   3. Video/Document → upload pipeline
-    //   4. External link → ingest pipeline
+    // Delegate to routeMessage — handles all media + links with correct priority
     await routeMessage(ctx, session, { ingestService, linkService });
 
-    // Unknown plain text with no link and no media
+    // Unknown plain text — no link, no media
     if (text && !msg.photo && !msg.video && !msg.document && !detectVideoLink(msg)) {
       await ctx.reply(
         "I didn't understand that.\n\n" +
