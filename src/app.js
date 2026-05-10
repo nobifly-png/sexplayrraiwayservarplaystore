@@ -5,6 +5,7 @@ const securityMiddleware = require('./middlewares/security.middleware');
 const requestId = require('./middlewares/requestId.middleware');
 const errorHandler = require('./middlewares/error.middleware');
 const routes = require('./routes');
+const watchRoutes = require('./routes/watch');
 const accessLog = require('./middlewares/accessLog.middleware');
 
 const app = express();
@@ -18,6 +19,7 @@ app.use(cookieParser());
 
 app.use('/api', accessLog);
 app.use('/api', routes);
+app.use('/', watchRoutes);
 
 app.use((req, res) => {
   res.status(404).json({

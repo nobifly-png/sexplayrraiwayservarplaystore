@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
 const { VIDEO_TYPE, VIDEO_STATUS } = require('../../common/enums');
 
+const THUMBNAIL_SOURCE = { AUTO: 'AUTO', MANUAL: 'MANUAL' };
+
 const videoSchema = new mongoose.Schema({
   creatorId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -39,6 +41,17 @@ const videoSchema = new mongoose.Schema({
   durationSeconds: {
     type: Number
   },
+  thumbnailUrl: {
+    type: String
+  },
+  thumbnailKey: {
+    type: String
+  },
+  thumbnailSource: {
+    type: String,
+    enum: Object.values(THUMBNAIL_SOURCE),
+    default: THUMBNAIL_SOURCE.AUTO
+  },
   telegramFileUniqueId: {
     type: String,
     sparse: true
@@ -65,3 +78,4 @@ videoSchema.index({ type: 1 });
 videoSchema.index({ telegramFileUniqueId: 1, creatorId: 1 }, { sparse: true });
 
 module.exports = mongoose.model('Video', videoSchema);
+module.exports.THUMBNAIL_SOURCE = THUMBNAIL_SOURCE;

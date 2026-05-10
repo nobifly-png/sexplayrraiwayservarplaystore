@@ -24,8 +24,11 @@ const clearQueue = (chatId) => {
   userQueues.delete(chatId);
 };
 
+const DEFAULT_THUMBNAIL_URL = process.env.DEFAULT_THUMBNAIL_URL || null;
+
 /**
  * Send per-video result as its own Telegram message.
+ * Uses sendPhoto if thumbnail available, falls back to sendMessage.
  */
 const sendVideoResult = async (ctx, chatId, result) => {
   await sleep(INTER_MSG_DELAY_MS);
@@ -34,12 +37,29 @@ const sendVideoResult = async (ctx, chatId, result) => {
       const msg = result.shareUrl
         ? `✅ Already Imported\n\n🔗 Watch:\n${result.shareUrl}`
         : `✅ Already Imported\n\nUse /videos to find your link.`;
-      await ctx.telegram.sendMessage(chatId, msg);
+      const photoUrl = result.thumbnailUrl || DEFAULT_THUMBNAIL_URL;
+      if (photoUrl && result.shareUrl) {
+        await ctx.telegram.sendPhoto(chatId, photoUrl, { caption: msg }).catch(() =>
+          ctx.telegram.sendMessage(chatId, msg).catch(() => {})
+        );
+      } else {
+        await ctx.telegram.sendMessage(chatId, msg).catch(() => {});
+      }
     } else if (result.success !== false) {
-      await ctx.telegram.sendMessage(chatId,
-        `✅ Upload Complete\n\n🎬 Title: ${result.title}\n\n🔗 Watch Link:\n${result.shareUrl}\n\n📊 Status: READY`);
+      const caption =
+        `✅ Upload Complete\n\n` +
+        `🎬 ${result.title}\n` +
+        `🔗 ${result.shareUrl}`;
+      const photoUrl = result.thumbnailUrl || DEFAULT_THUMBNAIL_URL;
+      if (photoUrl) {
+        await ctx.telegram.sendPhoto(chatId, photoUrl, { caption }).catch(() =>
+          ctx.telegram.sendMessage(chatId, caption).catch(() => {})
+        );
+      } else {
+        await ctx.telegram.sendMessage(chatId, caption).catch(() => {});
+      }
     } else {
-      await ctx.telegram.sendMessage(chatId, `❌ Upload failed: ${result.error || 'Unknown error'}`);
+      await ctx.telegram.sendMessage(chatId, `❌ Upload failed: ${result.error || 'Unknown error'}`).catch(() => {});
     }
   } catch (_) {}
 };

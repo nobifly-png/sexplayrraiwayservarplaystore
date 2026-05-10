@@ -356,7 +356,7 @@ class TelegramBotService {
           const Link = require('../links/link.model');
           const existingLink = await Link.findOne({ videoId: existing._id, isActive: true }).sort({ createdAt: -1 });
           const shareUrl = existingLink ? `${FRONTEND_URL}/watch/${existingLink.shortCode}` : null;
-          return { skipped: true, title: existing.title, shareUrl };
+          return { skipped: true, title: existing.title, shareUrl, thumbnailUrl: existing.thumbnailUrl || null };
         }
       }
 
@@ -384,7 +384,7 @@ class TelegramBotService {
       const shareUrl = `${FRONTEND_URL}/watch/${link.shortCode}`;
 
       logger.info({ videoId: video._id, shareUrl }, 'Bot: video uploaded and link created');
-      return { title: video.title, shareUrl };
+      return { title: video.title, shareUrl, thumbnailUrl: video.thumbnailUrl || null };
     });
   }
 
