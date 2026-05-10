@@ -10,9 +10,8 @@ const walletService = require('../wallet/wallet.service');
 const withdrawalService = require('../withdrawals/withdrawal.service');
 const ingestService = require('./ingest.service');
 
-const { handlePhoto, handleVideoFile, handleClipNovaLink, handleExternalLink } = require('./message.router');
-const { detectVideoLink, SUPPORTED_SOURCES } = require('./link.parser');
-const { isRateLimited } = require('./bot.ratelimit');
+const { routeMessage } = require('./message.router');
+const { detectVideoLink } = require('./link.parser');
 const { INGEST_STATUS } = require('./ingestJob.model');
 
 const Video = require('../videos/video.model');
@@ -73,15 +72,13 @@ class TelegramBotService {
       this.bot = new Telegraf(telegramConfig.botToken);
       this._registerHandlers();
 
-      // dropPendingUpdates: true clears any queued updates from previous instance.
-      // This prevents 409 Conflict on Render restarts where old polling is still alive.
+      // dropPendingUpdates prevents 409 Conflict on Render restarts
       await this.bot.launch({ dropPendingUpdates: true });
 
       this._launched = true;
       this._launching = false;
       logger.info('Telegram bot started');
 
-      // Handle polling errors without crashing
       this.bot.catch((err) => {
         logger.error({ errMsg: err.message }, 'Telegram polling error');
       });
@@ -115,41 +112,13 @@ class TelegramBotService {
     bot.command('withdraw', (ctx) => this._safe(ctx, () => this._onWithdrawCmd(ctx)));
     bot.command('cancel', (ctx) => this._safe(ctx, () => this._onCancel(ctx)));
 
-    // Photo — cache as pending thumbnail
-    bot.on('photo', (ctx) => this._safe(ctx, () =>
-      handlePhoto(ctx, getSession(ctx.chat.id))
-    ));
-
-    // Video file
-    bot.on('video', (ctx) => this._safe(ctx, () => {
-      const v = ctx.message.video;
-      const caption = ctx.message.caption || '';
-      const title = caption.trim() || v.file_name || `Video ${new Date().toISOString().slice(0, 10)}`;
-      handleVideoFile(ctx, getSession(ctx.chat.id), {
-        fileId: v.file_id,
-        fileUniqueId: v.file_unique_id,
-        title,
-        mimeType: v.mime_type || 'video/mp4',
-        fileSize: v.file_size
-      });
-    }));
-
-    // Document (mkv, avi, etc.)
-    bot.on('document', (ctx) => this._safe(ctx, () => {
-      const doc = ctx.message.document;
-      const caption = ctx.message.caption || '';
-      const title = caption.trim() || (doc.file_name ? doc.file_name.replace(/\.[^.]+$/, '') : '') || `Video ${new Date().toISOString().slice(0, 10)}`;
-      handleVideoFile(ctx, getSession(ctx.chat.id), {
-        fileId: doc.file_id,
-        fileUniqueId: doc.file_unique_id,
-        title,
-        mimeType: doc.mime_type || 'application/octet-stream',
-        fileSize: doc.file_size
-      });
-    }));
-
-    // Text messages — state machine + link detection
-    bot.on('message', (ctx) => this._safe(ctx, () => this._onMessage(ctx)));
+    // Single entry point for ALL non-command messages.
+    // routeMessage handles priority internally:
+    //   1. ClipNova link in text OR caption (even if photo present)
+    //   2. Photo only (no link) -> cache pending thumbnail
+    //   3. Video / Document -> upload pipeline
+    //   4. External links -> ingest pipeline
+    bot.on('message', (ctx) => this._safe(ctx, () => this._onAnyMessage(ctx)));
 
     bot.catch((err, ctx) => {
       logger.error({ errMsg: err.message, chatId: ctx?.chat?.id }, 'Bot handler error');
@@ -168,39 +137,40 @@ class TelegramBotService {
   async _onStart(ctx) {
     clearSession(ctx.chat.id);
     await ctx.reply(
-      `👋 Welcome to ClipNova Bot!\n\n` +
-      `Monetize your videos and track earnings.\n\n` +
-      `📌 Quick Start:\n` +
-      `1. Use /login to connect your account\n` +
-      `2. Forward any video directly to this bot\n` +
-      `3. Bot uploads to R2 and gives you a share link\n` +
-      `4. Share the link — earn on every view!\n\n` +
-      `💡 Tip: Send a photo BEFORE a video to set a custom thumbnail!\n\n` +
-      `Use /help to see all commands.`
+      '👋 Welcome to ClipNova Bot!\n\n' +
+      'Monetize your videos and track earnings.\n\n' +
+      '📌 Quick Start:\n' +
+      '1. Use /login to connect your account\n' +
+      '2. Forward any video directly to this bot\n' +
+      '3. Bot uploads to R2 and gives you a share link\n' +
+      '4. Share the link — earn on every view!\n\n' +
+      '💡 Tip: Send a photo BEFORE a video to set a custom thumbnail!\n\n' +
+      'Use /help to see all commands.'
     );
   }
 
   /* ─── /help ───────────────────────────────────────────────────────────── */
   async _onHelp(ctx) {
     await ctx.reply(
-      `ClipNova Bot — Commands\n\n` +
-      `🔐 Account\n` +
-      `/login — Connect your account\n` +
-      `/logout — Disconnect\n\n` +
-      `📹 Videos\n` +
-      `/videos — List your videos\n` +
-      `/imports — Recent import jobs\n` +
-      `/link <videoId> — Generate share link\n\n` +
-      `📊 Earnings\n` +
-      `/stats — Analytics overview\n` +
-      `/wallet — Wallet balance\n` +
-      `/withdraw — Request withdrawal\n\n` +
-      `🚀 Upload Methods\n` +
-      `• Forward any video file → auto upload to R2\n` +
-      `• Send a ClipNova /watch/ link → duplicate to your account\n` +
-      `• Send TeraBox/Dailymotion links → import as external ref\n` +
-      `• Send a photo FIRST → sets thumbnail for next upload\n\n` +
-      `/cancel — Cancel current action`
+      'ClipNova Bot — Commands\n\n' +
+      '🔐 Account\n' +
+      '/login — Connect your account\n' +
+      '/logout — Disconnect\n\n' +
+      '📹 Videos\n' +
+      '/videos — List your videos\n' +
+      '/imports — Recent import jobs\n' +
+      '/link <videoId> — Generate share link\n\n' +
+      '📊 Earnings\n' +
+      '/stats — Analytics overview\n' +
+      '/wallet — Wallet balance\n' +
+      '/withdraw — Request withdrawal\n\n' +
+      '🚀 Upload Methods\n' +
+      '• Forward any video file → auto upload to R2\n' +
+      '• Forward a ClipNova post (photo+link) → duplicate instantly\n' +
+      '• Send a ClipNova /watch/ link → duplicate to your account\n' +
+      '• Send TeraBox/Dailymotion links → import as external ref\n' +
+      '• Send a photo FIRST → sets thumbnail for next upload\n\n' +
+      '/cancel — Cancel current action'
     );
   }
 
@@ -301,7 +271,7 @@ class TelegramBotService {
 
     const stats = await analyticsService.getCreatorOverview(session.userId);
     await ctx.reply(
-      `📊 Your Analytics:\n\n` +
+      '📊 Your Analytics:\n\n' +
       `👁 Total Views: ${stats.totalViews}\n` +
       `✅ Valid Views: ${stats.validViews}\n` +
       `❌ Rejected: ${stats.rejectedViews}\n` +
@@ -316,7 +286,7 @@ class TelegramBotService {
 
     const wallet = await walletService.getWallet(session.userId);
     await ctx.reply(
-      `💰 Wallet:\n\n` +
+      '💰 Wallet:\n\n' +
       `Available: ₹${wallet.availableBalance.toFixed(2)}\n` +
       `Pending: ₹${wallet.pendingBalance.toFixed(2)}\n` +
       `Total Earned: ₹${wallet.totalEarnings.toFixed(2)}\n` +
@@ -332,57 +302,54 @@ class TelegramBotService {
     await ctx.reply('💸 Enter amount to withdraw (minimum ₹100):');
   }
 
-  /* ─── Text message handler ────────────────────────────────────────────── */
-  async _onMessage(ctx) {
+  /* ─── All non-command messages ────────────────────────────────────────── */
+  async _onAnyMessage(ctx) {
     const msg = ctx.message;
     if (!msg) return;
-    if (msg.video || msg.document || msg.photo) return; // handled by dedicated handlers
 
     const chatId = ctx.chat.id;
     const session = getSession(chatId);
     const text = (msg.text || msg.caption || '').trim();
 
-    // State machine
+    // State machine runs first — login/withdrawal flow
     if (session.state === STATES.AWAIT_EMAIL) {
       if (!text) return ctx.reply('Please enter your email:');
       setSession(chatId, { email: text, state: STATES.AWAIT_PASSWORD });
       return ctx.reply('🔑 Enter your password:');
     }
-
     if (session.state === STATES.AWAIT_PASSWORD) {
       if (!text) return ctx.reply('Please enter your password:');
       return this._processLogin(ctx, chatId, session.email, text);
     }
-
     if (session.state === STATES.AWAIT_WITHDRAWAL_AMOUNT) {
       const amount = parseFloat(text);
       if (isNaN(amount) || amount <= 0) return ctx.reply('Invalid amount. Enter a valid number:');
       setSession(chatId, { pendingWithdrawalAmount: amount, state: STATES.AWAIT_WITHDRAWAL_METHOD });
       return ctx.reply('💳 Choose payment method:', Markup.keyboard([['UPI', 'BANK_TRANSFER']]).oneTime().resize());
     }
-
     if (session.state === STATES.AWAIT_WITHDRAWAL_METHOD) {
       return this._processWithdrawal(ctx, chatId, session, text);
     }
 
-    // Link detection
-    const detected = detectVideoLink(msg);
-    if (detected) {
-      if (detected.source === SUPPORTED_SOURCES.CLIPNOVA) {
-        return handleClipNovaLink(ctx, session, detected.shortCode);
-      }
-      return handleExternalLink(ctx, session, detected, ingestService, linkService);
-    }
+    // Delegate ALL media + link routing to routeMessage
+    // Priority inside routeMessage:
+    //   1. ClipNova link in caption/text (even if photo present) → duplicate immediately
+    //   2. Photo only → cache pending thumbnail
+    //   3. Video/Document → upload pipeline
+    //   4. External link → ingest pipeline
+    await routeMessage(ctx, session, { ingestService, linkService });
 
-    if (text) {
+    // Unknown plain text with no link and no media
+    if (text && !msg.photo && !msg.video && !msg.document && !detectVideoLink(msg)) {
       await ctx.reply(
-        `I didn't understand that.\n\n` +
-        `📹 To upload a video:\n` +
-        `• Forward any video file directly\n` +
-        `• Send a ClipNova /watch/ link to duplicate it\n` +
-        `• Send a TeraBox / Dailymotion link\n` +
-        `• Send a photo FIRST to set a custom thumbnail\n\n` +
-        `Use /help to see all commands.`
+        "I didn't understand that.\n\n" +
+        '📹 To upload a video:\n' +
+        '• Forward any video file directly\n' +
+        '• Forward a ClipNova post (photo + link) to duplicate it\n' +
+        '• Send a ClipNova /watch/ link\n' +
+        '• Send a TeraBox / Dailymotion link\n' +
+        '• Send a photo FIRST to set a custom thumbnail\n\n' +
+        'Use /help to see all commands.'
       );
     }
   }
@@ -402,8 +369,8 @@ class TelegramBotService {
     setSession(chatId, { userId: result.user.id.toString() });
     await ctx.reply(
       `✅ Logged in as ${result.user.name}!\n\n` +
-      `Now forward any video — I'll upload it to R2 and give you a share link automatically!\n\n` +
-      `💡 Tip: Send a photo first to set a custom thumbnail.`
+      "Now forward any video — I'll upload it to R2 and give you a share link automatically!\n\n" +
+      '💡 Tip: Send a photo first to set a custom thumbnail.'
     );
   }
 

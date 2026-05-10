@@ -12,7 +12,7 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'https://clipnovawebistefronend
 const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
 
 /* ─── Download Telegram photo to buffer ─────────────────────────────────── */
-const downloadTelegramPhoto = async (ctx, photoArray) => {
+const downloadTelegramPhoto = async (photoArray) => {
   try {
     const https = require('https');
     const photo = photoArray[photoArray.length - 1]; // highest resolution
@@ -46,7 +46,7 @@ const downloadTelegramPhoto = async (ctx, photoArray) => {
 
     return { buffer, mimeType: 'image/jpeg' };
   } catch (err) {
-    logger.warn({ err }, 'MessageRouter: failed to download photo');
+    logger.warn({ errMsg: err.message }, 'MessageRouter: failed to download photo');
     return null;
   }
 };
@@ -64,14 +64,99 @@ const safeSendPhoto = async (ctx, chatId, thumbUrl, caption) => {
   await ctx.telegram.sendMessage(chatId, caption).catch(() => {});
 };
 
-/* ─── Route: Photo received ──────────────────────────────────────────────── */
-const handlePhoto = async (ctx, session) => {
+/* ─── MASTER ROUTER ──────────────────────────────────────────────────────── */
+/**
+ * Single entry point for ALL incoming messages.
+ * Priority order:
+ *   1. ClipNova link in text OR caption  → duplicate pipeline immediately
+ *   2. Photo only (no link)              → cache pending thumbnail
+ *   3. Video / Document                  → upload pipeline
+ *   4. Text with external link           → ingest pipeline
+ *   5. Unknown text                      → help message
+ */
+const routeMessage = async (ctx, session, { ingestService, linkService } = {}) => {
+  const msg = ctx.message;
+  if (!msg) return;
+
+  const chatId = ctx.chat.id;
+
+  // Extract all text content from message (text, caption, forwarded caption)
+  const content = (msg.text || msg.caption || '').trim();
+
+  // ── PRIORITY 1: ClipNova link detection (text OR caption) ────────────────
+  // Must run BEFORE photo handler so forwarded posts with photo+caption work
+  if (content) {
+    const detected = detectVideoLink(msg);
+
+    if (detected && detected.source === SUPPORTED_SOURCES.CLIPNOVA) {
+      logger.info({ chatId, shortCode: detected.shortCode }, 'MessageRouter: ClipNova caption detected');
+
+      // If message also has a photo, download it as override thumbnail
+      let overrideThumb = null;
+      if (msg.photo?.length) {
+        logger.info({ chatId }, 'MessageRouter: forwarded thumbnail attached');
+        overrideThumb = await downloadTelegramPhoto(msg.photo);
+      }
+
+      // Use override photo OR previously cached pending thumb
+      const pendingThumb = overrideThumb || consumePending(chatId);
+
+      return _handleClipNovaLink(ctx, session, detected.shortCode, pendingThumb);
+    }
+
+    // External link (TeraBox, Dailymotion, etc.) — only if no photo/video in same message
+    if (detected && !msg.photo && !msg.video && !msg.document) {
+      return _handleExternalLink(ctx, session, detected, ingestService, linkService);
+    }
+  }
+
+  // ── PRIORITY 2: Photo only (no ClipNova link) ────────────────────────────
+  if (msg.photo?.length && !msg.video && !msg.document) {
+    return _handlePhotoOnly(ctx, session);
+  }
+
+  // ── PRIORITY 3: Video file ───────────────────────────────────────────────
+  if (msg.video) {
+    const v = msg.video;
+    const title = (msg.caption || '').trim() || v.file_name || `Video ${new Date().toISOString().slice(0, 10)}`;
+    return _handleVideoFile(ctx, session, {
+      fileId: v.file_id,
+      fileUniqueId: v.file_unique_id,
+      title,
+      mimeType: v.mime_type || 'video/mp4',
+      fileSize: v.file_size
+    });
+  }
+
+  // ── PRIORITY 4: Document file ────────────────────────────────────────────
+  if (msg.document) {
+    const doc = msg.document;
+    const title = (msg.caption || '').trim() ||
+      (doc.file_name ? doc.file_name.replace(/\.[^.]+$/, '') : '') ||
+      `Video ${new Date().toISOString().slice(0, 10)}`;
+    return _handleVideoFile(ctx, session, {
+      fileId: doc.file_id,
+      fileUniqueId: doc.file_unique_id,
+      title,
+      mimeType: doc.mime_type || 'application/octet-stream',
+      fileSize: doc.file_size
+    });
+  }
+
+  // ── PRIORITY 5: Plain text with external link ────────────────────────────
+  if (content) {
+    const detected = detectVideoLink(msg);
+    if (detected) {
+      return _handleExternalLink(ctx, session, detected, ingestService, linkService);
+    }
+  }
+};
+
+/* ─── Photo only → cache pending thumbnail ───────────────────────────────── */
+const _handlePhotoOnly = async (ctx, session) => {
   if (!session.userId) return ctx.reply('🔐 Please /login first.');
 
-  const photo = ctx.message.photo;
-  if (!photo?.length) return;
-
-  const downloaded = await downloadTelegramPhoto(ctx, photo);
+  const downloaded = await downloadTelegramPhoto(ctx.message.photo);
   if (downloaded) {
     setPending(ctx.chat.id, downloaded.buffer, downloaded.mimeType);
     logger.info({ chatId: ctx.chat.id }, 'MessageRouter: pending thumbnail cached');
@@ -81,54 +166,15 @@ const handlePhoto = async (ctx, session) => {
   }
 };
 
-/* ─── Route: Video/Document file received ────────────────────────────────── */
-const handleVideoFile = (ctx, session, fileInfo) => {
-  const { fileId, fileUniqueId, title, mimeType, fileSize } = fileInfo;
-  const chatId = ctx.chat.id;
-
-  if (!session.userId) { ctx.reply('🔐 Please /login first.').catch(() => {}); return; }
-  if (isRateLimited(chatId)) { ctx.reply('⚠️ Too many uploads. Please wait a minute.').catch(() => {}); return; }
-  if (fileSize && fileSize > MAX_FILE_SIZE) { ctx.reply('❌ File too large. Maximum 2GB allowed.').catch(() => {}); return; }
-
-  // Consume pending thumb NOW (before async enqueue) so it belongs to this user/upload
-  const pendingThumb = consumePending(chatId);
-
-  enqueue(ctx, String(chatId), title, async () => {
-    // Duplicate check
-    if (fileUniqueId) {
-      const existing = await Video.findOne({
-        creatorId: session.userId,
-        telegramFileUniqueId: fileUniqueId,
-        isDeleted: false
-      });
-      if (existing) {
-        const existingLink = await Link.findOne({ videoId: existing._id, isActive: true }).sort({ createdAt: -1 });
-        const shareUrl = existingLink ? `${FRONTEND_URL}/watch/${existingLink.shortCode}` : null;
-        logger.info({ fileUniqueId }, 'MessageRouter: duplicate file skipped');
-        return { skipped: true, title: existing.title, shareUrl, thumbnailUrl: existing.thumbnailUrl || null };
-      }
-    }
-
-    const { video, shareUrl } = await uploadTelegramVideo({
-      userId: session.userId,
-      fileId, fileUniqueId, title, mimeType, fileSize,
-      pendingThumb
-    });
-
-    return { title: video.title, shareUrl, thumbnailUrl: video.thumbnailUrl || null };
-  });
-};
-
-/* ─── Route: ClipNova /watch/ link received ─────────────────────────────── */
-const handleClipNovaLink = async (ctx, session, shortCode) => {
+/* ─── ClipNova link → duplicate pipeline ────────────────────────────────── */
+const _handleClipNovaLink = async (ctx, session, shortCode, pendingThumb) => {
   const chatId = ctx.chat.id;
 
   if (!session.userId) return ctx.reply('🔐 Please /login first.');
   if (isRateLimited(chatId)) return ctx.reply('⚠️ Too many requests. Please wait a minute.');
 
-  logger.info({ chatId, shortCode }, 'MessageRouter: ClipNova link detected');
+  logger.info({ chatId, shortCode }, 'MessageRouter: duplicate pipeline triggered');
 
-  const pendingThumb = consumePending(chatId);
   const ackMsg = await ctx.reply('⏳ Processing ClipNova link...');
 
   try {
@@ -143,7 +189,6 @@ const handleClipNovaLink = async (ctx, session, shortCode) => {
       ? `🔁 You already have this video!\n\n🎬 ${video.title}\n🔗 ${shareUrl}`
       : `✅ Upload Complete\n\n🎬 ${video.title}\n🔗 ${shareUrl}`;
 
-    // Delete ack message, then send photo (or text fallback)
     await ctx.telegram.deleteMessage(chatId, ackMsg.message_id).catch(() => {});
     await safeSendPhoto(ctx, chatId, thumbUrl, caption);
 
@@ -157,8 +202,46 @@ const handleClipNovaLink = async (ctx, session, shortCode) => {
   }
 };
 
-/* ─── Route: External link (TeraBox, Dailymotion, etc.) ─────────────────── */
-const handleExternalLink = async (ctx, session, detected, ingestService, linkService) => {
+/* ─── Video/Document file → upload pipeline ─────────────────────────────── */
+const _handleVideoFile = (ctx, session, fileInfo) => {
+  const { fileId, fileUniqueId, title, mimeType, fileSize } = fileInfo;
+  const chatId = ctx.chat.id;
+
+  if (!session.userId) { ctx.reply('🔐 Please /login first.').catch(() => {}); return; }
+  if (isRateLimited(chatId)) { ctx.reply('⚠️ Too many uploads. Please wait a minute.').catch(() => {}); return; }
+  if (fileSize && fileSize > MAX_FILE_SIZE) { ctx.reply('❌ File too large. Maximum 2GB allowed.').catch(() => {}); return; }
+
+  // Consume pending thumb NOW before async enqueue — prevents cross-user collision
+  const pendingThumb = consumePending(chatId);
+
+  enqueue(ctx, String(chatId), title, async () => {
+    // Duplicate check: userId + fileUniqueId (NOT global — different users can repost same file)
+    if (fileUniqueId) {
+      const existing = await Video.findOne({
+        creatorId: session.userId,        // scoped to THIS user only
+        telegramFileUniqueId: fileUniqueId,
+        isDeleted: false
+      });
+      if (existing) {
+        const existingLink = await Link.findOne({ videoId: existing._id, isActive: true }).sort({ createdAt: -1 });
+        const shareUrl = existingLink ? `${FRONTEND_URL}/watch/${existingLink.shortCode}` : null;
+        logger.info({ fileUniqueId, userId: session.userId }, 'MessageRouter: duplicate file skipped (same user)');
+        return { skipped: true, title: existing.title, shareUrl, thumbnailUrl: existing.thumbnailUrl || null };
+      }
+    }
+
+    const { video, shareUrl } = await uploadTelegramVideo({
+      userId: session.userId,
+      fileId, fileUniqueId, title, mimeType, fileSize,
+      pendingThumb
+    });
+
+    return { title: video.title, shareUrl, thumbnailUrl: video.thumbnailUrl || null };
+  });
+};
+
+/* ─── External link → ingest pipeline ───────────────────────────────────── */
+const _handleExternalLink = async (ctx, session, detected, ingestService, linkService) => {
   const chatId = ctx.chat.id;
 
   if (!session.userId) return ctx.reply('🔐 Please /login first.');
@@ -211,4 +294,10 @@ const handleExternalLink = async (ctx, session, detected, ingestService, linkSer
   }
 };
 
-module.exports = { handlePhoto, handleVideoFile, handleClipNovaLink, handleExternalLink };
+// Keep named exports for backward compat
+const handlePhoto = (ctx, session) => routeMessage(ctx, session);
+const handleVideoFile = (ctx, session, fileInfo) => { ctx.message = { ...ctx.message, ...fileInfo }; return routeMessage(ctx, session); };
+const handleClipNovaLink = (ctx, session, shortCode) => _handleClipNovaLink(ctx, session, shortCode, consumePending(ctx.chat.id));
+const handleExternalLink = (ctx, session, detected, ingestService, linkService) => _handleExternalLink(ctx, session, detected, ingestService, linkService);
+
+module.exports = { routeMessage, handlePhoto, handleVideoFile, handleClipNovaLink, handleExternalLink };
