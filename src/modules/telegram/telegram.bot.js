@@ -158,7 +158,7 @@ class TelegramBotService {
   async _onStart(ctx) {
     clearSession(ctx.chat.id);
     await ctx.reply(
-      '👋 Welcome to ClipNova Bot!\n\n' +
+      '👋 Welcome to Zexgram Bot!\n\n' +
       'Monetize your videos and track earnings.\n\n' +
       '📌 Quick Start:\n' +
       '1. Use /login to connect your account\n' +
@@ -173,7 +173,7 @@ class TelegramBotService {
   /* ─── /help ───────────────────────────────────────────────────────────── */
   async _onHelp(ctx) {
     await ctx.reply(
-      'ClipNova Bot — Commands\n\n' +
+      'Zexgram Bot — Commands\n\n' +
       '🔐 Account\n' +
       '/login — Connect your account\n' +
       '/logout — Disconnect\n\n' +
@@ -187,8 +187,8 @@ class TelegramBotService {
       '/withdraw — Request withdrawal\n\n' +
       '🚀 Upload Methods\n' +
       '• Forward any video file → auto upload to R2\n' +
-      '• Forward a ClipNova post (photo+link) → duplicate instantly\n' +
-      '• Send a ClipNova /watch/ link → duplicate to your account\n' +
+      '• Forward a Zexgram post (photo+link) → duplicate instantly\n' +
+      '• Send a Zexgram /watch/ link → duplicate to your account\n' +
       '• Send TeraBox/Dailymotion links → import as external ref\n' +
       '• Send a photo FIRST → sets thumbnail for next upload\n\n' +
       '/cancel — Cancel current action'
@@ -211,7 +211,7 @@ class TelegramBotService {
     const session = getSession(ctx.chat.id);
     if (session.userId) return ctx.reply('Already logged in. Use /logout first.');
     setSession(ctx.chat.id, { state: STATES.AWAIT_EMAIL });
-    await ctx.reply('📧 Enter your ClipNova email:');
+    await ctx.reply('📧 Enter your Zexgram email:');
   }
 
   /* ─── /logout ─────────────────────────────────────────────────────────── */
@@ -361,8 +361,8 @@ class TelegramBotService {
         "I didn't understand that.\n\n" +
         '📹 To upload a video:\n' +
         '• Forward any video file directly\n' +
-        '• Forward a ClipNova post (photo + link) to duplicate it\n' +
-        '• Send a ClipNova /watch/ link\n' +
+        '• Forward a Zexgram post (photo + link) to duplicate it\n' +
+        '• Send a Zexgram /watch/ link\n' +
         '• Send a TeraBox / Dailymotion link\n' +
         '• Send a photo FIRST to set a custom thumbnail\n\n' +
         'Use /help to see all commands.'

@@ -89,7 +89,7 @@ const routeMessage = async (ctx, session, { ingestService, linkService } = {}) =
     const detected = detectVideoLink(msg);
 
     if (detected && detected.source === SUPPORTED_SOURCES.CLIPNOVA) {
-      logger.info({ chatId, shortCode: detected.shortCode }, 'MessageRouter: ClipNova caption detected');
+      logger.info({ chatId, shortCode: detected.shortCode }, 'MessageRouter: Zexgram caption detected');
 
       let overrideThumb = null;
       if (msg.photo?.length) {
@@ -256,7 +256,8 @@ const _handleExternalLink = async (ctx, session, detected, ingestService, linkSe
   const SOURCE_LABELS = {
     TERABOX: 'TeraBox', DAILYMOTION: 'Dailymotion',
     DIRECT_MP4: 'Direct Video', STREAMTAPE: 'Streamtape',
-    MIXDROP: 'Mixdrop', DOODSTREAM: 'DoodStream'
+    MIXDROP: 'Mixdrop', DOODSTREAM: 'DoodStream',
+    ZEXGRAM: 'Zexgram'
   };
 
   const sourceLabel = SOURCE_LABELS[detected.source] || detected.source;
