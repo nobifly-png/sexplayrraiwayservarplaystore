@@ -353,10 +353,10 @@ class TelegramBotService {
     }
 
     // Delegate to routeMessage — handles all media + links with correct priority
-    await routeMessage(ctx, session, { ingestService, linkService });
+    const handled = await routeMessage(ctx, session, { ingestService, linkService });
 
-    // Unknown plain text — no link, no media
-    if (text && !msg.photo && !msg.video && !msg.document && !detectVideoLink(msg)) {
+    // Unknown plain text — no link, no media, not handled by routeMessage
+    if (!handled && text && !msg.photo && !msg.video && !msg.document && !detectVideoLink(msg)) {
       await ctx.reply(
         "I didn't understand that.\n\n" +
         '📹 To upload a video:\n' +

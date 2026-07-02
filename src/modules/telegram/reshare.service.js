@@ -52,7 +52,13 @@ const reshareLink = async (shortCode, requestingUserId) => {
   }
 
   // 3. Create new link under requesting user's account
-  const newLink = await linkService.createLink(requestingUserIdStr, videoId);
+  // Bypass ownership check — video may belong to another creator (reshare scenario)
+  const newLink = await Link.create({
+    videoId: video._id,
+    creatorId: requestingUserId,
+    shortCode: require('../../common/utils').generateShortCode(),
+    isActive: true
+  });
 
   logger.info({ newLinkId: newLink._id, shortCode: newLink.shortCode }, 'Reshare: new link created');
 

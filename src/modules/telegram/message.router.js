@@ -91,41 +91,42 @@ const routeMessage = async (ctx, session, { ingestService, linkService } = {}) =
     if (detected && detected.source === SUPPORTED_SOURCES.CLIPNOVA) {
       logger.info({ chatId, shortCode: detected.shortCode }, 'MessageRouter: ClipNova caption detected');
 
-      // If message also has a photo, download it as override thumbnail
       let overrideThumb = null;
       if (msg.photo?.length) {
         logger.info({ chatId }, 'MessageRouter: forwarded thumbnail attached');
         overrideThumb = await downloadTelegramPhoto(msg.photo);
       }
 
-      // Use override photo OR previously cached pending thumb
       const pendingThumb = overrideThumb || consumePending(chatId);
-
-      return _handleClipNovaLink(ctx, session, detected.shortCode, pendingThumb);
+      await _handleClipNovaLink(ctx, session, detected.shortCode, pendingThumb);
+      return true;
     }
 
     // External link (TeraBox, Dailymotion, etc.) — only if no photo/video in same message
     if (detected && !msg.photo && !msg.video && !msg.document) {
-      return _handleExternalLink(ctx, session, detected, ingestService, linkService);
+      await _handleExternalLink(ctx, session, detected, ingestService, linkService);
+      return true;
     }
   }
 
   // ── PRIORITY 2: Photo only (no ClipNova link) ────────────────────────────
   if (msg.photo?.length && !msg.video && !msg.document) {
-    return _handlePhotoOnly(ctx, session);
+    await _handlePhotoOnly(ctx, session);
+    return true;
   }
 
   // ── PRIORITY 3: Video file ───────────────────────────────────────────────
   if (msg.video) {
     const v = msg.video;
     const title = (msg.caption || '').trim() || v.file_name || `Video ${new Date().toISOString().slice(0, 10)}`;
-    return _handleVideoFile(ctx, session, {
+    _handleVideoFile(ctx, session, {
       fileId: v.file_id,
       fileUniqueId: v.file_unique_id,
       title,
       mimeType: v.mime_type || 'video/mp4',
       fileSize: v.file_size
     });
+    return true;
   }
 
   // ── PRIORITY 4: Document file ────────────────────────────────────────────
@@ -134,22 +135,26 @@ const routeMessage = async (ctx, session, { ingestService, linkService } = {}) =
     const title = (msg.caption || '').trim() ||
       (doc.file_name ? doc.file_name.replace(/\.[^.]+$/, '') : '') ||
       `Video ${new Date().toISOString().slice(0, 10)}`;
-    return _handleVideoFile(ctx, session, {
+    _handleVideoFile(ctx, session, {
       fileId: doc.file_id,
       fileUniqueId: doc.file_unique_id,
       title,
       mimeType: doc.mime_type || 'application/octet-stream',
       fileSize: doc.file_size
     });
+    return true;
   }
 
   // ── PRIORITY 5: Plain text with external link ────────────────────────────
   if (content) {
     const detected = detectVideoLink(msg);
     if (detected) {
-      return _handleExternalLink(ctx, session, detected, ingestService, linkService);
+      await _handleExternalLink(ctx, session, detected, ingestService, linkService);
+      return true;
     }
   }
+
+  return false;
 };
 
 /* ─── Photo only → cache pending thumbnail ───────────────────────────────── */
