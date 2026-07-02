@@ -112,8 +112,62 @@ const generateThumbnailFromUrl = async (videoUrl, seekSeconds = 2) => {
   }
 };
 
+/**
+ * Transcode video buffer to H.264 Baseline profile — compatible with all Android ExoPlayer.
+ * Returns transcoded Buffer or original buffer if FFmpeg not available.
+ * NEVER throws.
+ */
+const transcodeToCompatible = async (inputBuffer) => {
+  const ffmpeg = getFfmpeg();
+  if (!ffmpeg) {
+    logger.warn('FFmpeg: not available — skipping transcode, uploading original');
+    return inputBuffer;
+  }
+
+  const id = crypto.randomBytes(8).toString('hex');
+  const tmpIn = path.join(os.tmpdir(), `txin_${id}.mp4`);
+  const tmpOut = path.join(os.tmpdir(), `txout_${id}.mp4`);
+
+  const cleanup = () => {
+    fs.unlink(tmpIn, () => {});
+    fs.unlink(tmpOut, () => {});
+  };
+
+  try {
+    await fs.promises.writeFile(tmpIn, inputBuffer);
+
+    await new Promise((resolve, reject) => {
+      ffmpeg(tmpIn)
+        .videoCodec('libx264')
+        .addOutputOptions([
+          '-profile:v baseline',  // H.264 Baseline — max compatibility
+          '-level 3.0',
+          '-preset fast',
+          '-crf 23',
+          '-movflags +faststart',  // web optimized
+          '-acodec aac',
+          '-b:a 128k'
+        ])
+        .output(tmpOut)
+        .on('end', resolve)
+        .on('error', reject)
+        .run();
+    });
+
+    const outBuffer = await fs.promises.readFile(tmpOut);
+    cleanup();
+    logger.info({ inputSize: inputBuffer.length, outputSize: outBuffer.length }, 'FFmpeg: transcode complete');
+    return outBuffer;
+  } catch (err) {
+    cleanup();
+    logger.warn({ errMsg: err.message }, 'FFmpeg: transcode failed — uploading original');
+    return inputBuffer;
+  }
+};
+
 module.exports = {
   generateThumbnailFromBuffer,
   generateThumbnailFromUrl,
+  transcodeToCompatible,
   getFfmpeg
 };

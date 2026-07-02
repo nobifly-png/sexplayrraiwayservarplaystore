@@ -11,7 +11,7 @@ const {
   buildVideoStorageKey, buildThumbnailStorageKey,
   getPublicUrl, uploadBufferToR2
 } = require('./r2.utils');
-const { generateThumbnailFromUrl } = require('./ffmpeg.service');
+const { generateThumbnailFromUrl, transcodeToCompatible } = require('./ffmpeg.service');
 const logger = require('../../config/logger');
 const telegramConfig = require('../../config/telegram');
 
@@ -90,10 +90,28 @@ const uploadTelegramVideo = async ({ userId, fileId, fileUniqueId, title, mimeTy
 
   const { downloadUrl, filePath } = await getTelegramFileUrl(botToken, fileId);
   const ext = (filePath || '').split('.').pop().replace(/[^a-zA-Z0-9]/g, '').slice(0, 8) || 'mp4';
-  const storageKey = buildVideoStorageKey(userId, ext);
+  const storageKey = buildVideoStorageKey(userId, 'mp4'); // always mp4 after transcode
 
-  logger.info({ storageKey }, 'Pipeline: streaming to R2');
-  const { fileSize: uploadedSize } = await streamUrlToR2(downloadUrl, storageKey, mimeType || 'video/mp4');
+  // Download video buffer
+  logger.info({ storageKey }, 'Pipeline: downloading from Telegram');
+  const rawBuffer = await new Promise((resolve, reject) => {
+    const proto = downloadUrl.startsWith('https') ? https : http;
+    proto.get(downloadUrl, { timeout: 120000 }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+      res.on('error', reject);
+    }).on('error', reject).on('timeout', () => reject(new Error('Download timed out')));
+  });
+
+  // Transcode to H.264 Baseline for ExoPlayer compatibility
+  logger.info({ size: rawBuffer.length }, 'Pipeline: transcoding to H.264 Baseline');
+  const videoBuffer = await transcodeToCompatible(rawBuffer);
+
+  // Upload transcoded buffer to R2
+  logger.info({ storageKey }, 'Pipeline: uploading to R2');
+  const { url: _u } = await uploadBufferToR2(videoBuffer, storageKey, 'video/mp4');
+  const uploadedSize = videoBuffer.length;
 
   const video = await Video.create({
     creatorId: userId,
@@ -103,7 +121,7 @@ const uploadTelegramVideo = async ({ userId, fileId, fileUniqueId, title, mimeTy
     storageKey,
     fileName: title,
     mimeType: mimeType || 'video/mp4',
-    fileSize: uploadedSize || fileSize,
+    fileSize: uploadedSize,
     status: VIDEO_STATUS.READY,
     telegramFileUniqueId: fileUniqueId || undefined,
     uploadSource: 'TELEGRAM_DIRECT',
@@ -112,8 +130,6 @@ const uploadTelegramVideo = async ({ userId, fileId, fileUniqueId, title, mimeTy
 
   logger.info({ videoId: video._id }, 'Pipeline: video record created');
 
-  // Thumbnail — await manual pending thumb so it's ready for bot response.
-  // FFmpeg auto-gen is fire-and-forget (slow, non-blocking).
   if (pendingThumb?.buffer) {
     await attachThumbnail(video, pendingThumb, null);
   } else {
