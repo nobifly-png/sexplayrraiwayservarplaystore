@@ -3,16 +3,16 @@ const linkService = require('../modules/links/link.service');
 const logger = require('../config/logger');
 
 const DEFAULT_THUMBNAIL_URL = process.env.DEFAULT_THUMBNAIL_URL || '';
-const APP_URL = process.env.APP_URL || '';
+const FRONTEND_URL = process.env.FRONTEND_URL || '';
 
 const router = express.Router();
 
 router.get('/watch/:shortCode', async (req, res) => {
   const { shortCode } = req.params;
 
-  let title = 'ClipNova';
+  let title = 'Zexgram';
   let thumbnailUrl = DEFAULT_THUMBNAIL_URL;
-  let description = 'Watch this video on ClipNova';
+  let description = 'Watch this video on Zexgram';
 
   try {
     const { video } = await linkService.resolveLinkByShortCode(shortCode);
@@ -23,7 +23,7 @@ router.get('/watch/:shortCode', async (req, res) => {
     logger.warn({ shortCode, errMsg: err.message }, 'OG watch: link not found');
   }
 
-  const watchUrl = `${APP_URL}/watch/${shortCode}`;
+  const watchUrl = `${FRONTEND_URL}/watch/${shortCode}`;
   const safeTitle = title.replace(/"/g, '&quot;');
   const safeDesc = description.replace(/"/g, '&quot;');
   const safeThumb = thumbnailUrl.replace(/"/g, '&quot;');
