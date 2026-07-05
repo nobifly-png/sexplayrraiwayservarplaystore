@@ -140,12 +140,15 @@ const transcodeToCompatible = async (inputBuffer) => {
       ffmpeg(tmpIn)
         .videoCodec('libx264')
         .addOutputOptions([
-          '-profile:v baseline',  // H.264 Baseline — max compatibility
-          '-level 3.0',
+          '-profile:v baseline',
+          '-level 3.1',
+          '-pix_fmt yuv420p',
+          '-vf scale=trunc(iw/2)*2:trunc(ih/2)*2',
           '-preset fast',
           '-crf 23',
-          '-movflags +faststart',  // web optimized
+          '-movflags +faststart',
           '-acodec aac',
+          '-ar 44100',
           '-b:a 128k'
         ])
         .output(tmpOut)

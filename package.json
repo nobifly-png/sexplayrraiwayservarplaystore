@@ -11,7 +11,8 @@
     "verify": "node scripts/verifySetup.js",
     "test:p1": "node scripts/regressionP1.js",
     "verify:runtime": "node scripts/runtimeVerification.js",
-    "verify:sprint": "node scripts/sprintHardening.js"
+    "verify:sprint": "node scripts/sprintHardening.js",
+    "migrate:r2": "node scripts/migrate-r2-metadata.js"
   },
   "keywords": [
     "video",

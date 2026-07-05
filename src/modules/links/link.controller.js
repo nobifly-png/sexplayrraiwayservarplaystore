@@ -44,7 +44,14 @@ const linkController = {
         : video.externalUrl || null;
       logger.info({ shortCode, videoId: video._id, status: video.status }, 'PublicResolve: success');
       successResponse(res, {
-        video: { id: video._id, title: video.title, description: video.description, type: video.type, videoUrl },
+        video: {
+          id: video._id,
+          title: video.title,
+          description: video.description,
+          type: video.type,
+          mimeType: video.mimeType || 'video/mp4',
+          videoUrl
+        },
         link: { id: link._id, shortCode: link.shortCode }
       }, 'Link resolved');
     } catch (error) {
@@ -72,7 +79,14 @@ const linkController = {
         : video.externalUrl || null;
       logger.info({ shortCode, videoId: video._id, status: video.status }, 'PublicResolve: success');
       successResponse(res, {
-        video: { id: video._id, title: video.title, description: video.description, type: video.type, videoUrl },
+        video: {
+          id: video._id,
+          title: video.title,
+          description: video.description,
+          type: video.type,
+          mimeType: video.mimeType || 'video/mp4',
+          videoUrl
+        },
         link: { id: link._id, shortCode: link.shortCode }
       }, 'Link resolved');
     } catch (error) {

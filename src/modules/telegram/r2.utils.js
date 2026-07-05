@@ -41,12 +41,15 @@ const streamUrlToR2 = (downloadUrl, storageKey, mimeType) => {
       res.on('end', async () => {
         try {
           const buffer = Buffer.concat(chunks, totalBytes);
+          const isVideo = (mimeType || '').startsWith('video/');
           await r2Client.send(new PutObjectCommand({
             Bucket: bucketName,
             Key: storageKey,
             Body: buffer,
             ContentType: mimeType || 'application/octet-stream',
-            ContentLength: totalBytes
+            ContentLength: totalBytes,
+            ContentDisposition: 'inline',
+            CacheControl: isVideo ? 'public, max-age=31536000' : 'public, max-age=86400'
           }));
           logger.info({ storageKey, totalBytes }, 'R2: stream upload complete');
           resolve({ fileSize: totalBytes });
@@ -72,12 +75,15 @@ const streamUrlToR2 = (downloadUrl, storageKey, mimeType) => {
 const uploadBufferToR2 = async (buffer, storageKey, mimeType) => {
   if (!isR2Configured() || !r2Client) throw new Error('R2 not configured');
 
+  const isVideo = (mimeType || '').startsWith('video/');
   await r2Client.send(new PutObjectCommand({
     Bucket: bucketName,
     Key: storageKey,
     Body: buffer,
     ContentType: mimeType || 'application/octet-stream',
-    ContentLength: buffer.length
+    ContentLength: buffer.length,
+    ContentDisposition: 'inline',
+    CacheControl: isVideo ? 'public, max-age=31536000' : 'public, max-age=86400'
   }));
 
   return { storageKey, url: `${publicBaseUrl}/${storageKey}` };
