@@ -82,8 +82,7 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
 process.on('unhandledRejection', (err) => {
-  logger.error({ err }, 'Unhandled Rejection');
-  shutdown('unhandledRejection');
+  logger.error({ err }, 'Unhandled Rejection — continuing');
 });
 
 process.on('uncaughtException', (err) => {
