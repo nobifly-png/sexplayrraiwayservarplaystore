@@ -56,6 +56,8 @@ class TelegramBotService {
     this.enabled = telegramConfig.enabled;
     this._launching = false;
     this._launched = false;
+    this._stopped = false;
+    this._reconnectTimer = null;
   }
 
   async initialize() {
@@ -63,6 +65,7 @@ class TelegramBotService {
       logger.info('Telegram bot disabled or token not set — skipping');
       return;
     }
+    if (this._stopped) return;
     if (this._launching || this._launched) {
       logger.warn('Telegram bot already launching — skipping duplicate init');
       return;
@@ -72,10 +75,9 @@ class TelegramBotService {
     logger.info('Telegram bot initializing');
 
     try {
+      // Always create a fresh Telegraf instance on reconnect
       this.bot = new Telegraf(telegramConfig.botToken);
 
-      // ── Global error handler — MUST be registered before launch ──────────
-      // Without this, any handler error silently kills polling.
       this.bot.catch((err, ctx) => {
         logger.error({
           errMsg: err.message,
@@ -86,7 +88,6 @@ class TelegramBotService {
         ctx?.reply('Something went wrong. Please try again.').catch(() => {});
       });
 
-      // ── Raw update logger — confirms updates are reaching the bot ─────────
       this.bot.use(async (ctx, next) => {
         logger.info({
           updateType: ctx.updateType,
@@ -98,15 +99,13 @@ class TelegramBotService {
 
       this._registerHandlers();
 
-      // ── CRITICAL FIX: bot.launch() in polling mode NEVER resolves ─────────
-      // Do NOT await it — it blocks forever. Use .catch() for error handling.
       this.bot.launch({ dropPendingUpdates: true }).catch((err) => {
-        logger.error({ errMsg: err.message }, 'Telegram bot launch error');
+        logger.error({ errMsg: err.message }, 'Telegram bot polling died — scheduling reconnect');
         this._launched = false;
         this._launching = false;
+        this._scheduleReconnect();
       });
 
-      // Mark as launched immediately after calling launch()
       this._launched = true;
       this._launching = false;
       logger.info('Telegram bot launched successfully');
@@ -114,11 +113,23 @@ class TelegramBotService {
     } catch (err) {
       this._launching = false;
       this._launched = false;
-      logger.error({ errMsg: err.message, stack: err.stack }, 'Telegram bot failed to initialize');
+      logger.error({ errMsg: err.message, stack: err.stack }, 'Telegram bot failed to initialize — scheduling reconnect');
+      this._scheduleReconnect();
     }
   }
 
+  _scheduleReconnect(delayMs = 10000) {
+    if (this._stopped || this._reconnectTimer) return;
+    logger.info({ delayMs }, 'Telegram bot: reconnect scheduled');
+    this._reconnectTimer = setTimeout(() => {
+      this._reconnectTimer = null;
+      this.initialize();
+    }, delayMs);
+  }
+
   async stop(signal = 'SHUTDOWN') {
+    this._stopped = true;
+    if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null; }
     if (this.bot && this._launched) {
       try { await this.bot.stop(signal); } catch (_) {}
       this._launched = false;

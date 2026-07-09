@@ -86,8 +86,7 @@ process.on('unhandledRejection', (err) => {
 });
 
 process.on('uncaughtException', (err) => {
-  logger.error({ err }, 'Uncaught Exception');
-  shutdown('uncaughtException');
+  logger.error({ err }, 'Uncaught Exception — continuing');
 });
 
 startServer();
