@@ -3,7 +3,7 @@ const linkService = require('../modules/links/link.service');
 const logger = require('../config/logger');
 
 const DEFAULT_THUMBNAIL_URL = process.env.DEFAULT_THUMBNAIL_URL || '';
-const FRONTEND_URL = process.env.FRONTEND_URL || '';
+const BACKEND_URL = process.env.APP_URL || process.env.FRONTEND_URL || '';
 
 const router = express.Router();
 
@@ -23,7 +23,7 @@ router.get('/watch/:shortCode', async (req, res) => {
     logger.warn({ shortCode, errMsg: err.message }, 'OG watch: link not found');
   }
 
-  const watchUrl = `${FRONTEND_URL}/watch/${shortCode}`;
+  const watchUrl = `${BACKEND_URL}/watch/${shortCode}`;
   const safeTitle = title.replace(/"/g, '&quot;');
   const safeDesc = description.replace(/"/g, '&quot;');
   const safeThumb = thumbnailUrl.replace(/"/g, '&quot;');
@@ -44,10 +44,19 @@ router.get('/watch/:shortCode', async (req, res) => {
   <meta name="twitter:title" content="${safeTitle}">
   <meta name="twitter:description" content="${safeDesc}">
   ${safeThumb ? `<meta name="twitter:image" content="${safeThumb}">` : ''}
-  <meta http-equiv="refresh" content="0;url=${safeUrl}">
+  <script>
+    // Try to open in app via custom scheme, fallback stays on this page
+    window.location.href = 'novax://watch/${shortCode}';
+    setTimeout(function() {
+      document.getElementById('fallback').style.display = 'block';
+    }, 2000);
+  <\/script>
 </head>
 <body>
-  <p>Redirecting to <a href="${safeUrl}">${safeTitle}</a>...</p>
+  <p>Opening in Zexplayer app...</p>
+  <div id="fallback" style="display:none">
+    <p>App not installed? <a href="${safeUrl}">${safeTitle}</a></p>
+  </div>
 </body>
 </html>`);
 });
