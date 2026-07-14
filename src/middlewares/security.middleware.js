@@ -7,14 +7,22 @@ const corsOptions = {
   origin: (origin, callback) => {
     // No origin = mobile app, curl, server-to-server — allow
     if (!origin) return callback(null, true);
+    // Exact match
     if (corsOrigins.includes(origin)) return callback(null, true);
+    // Wildcard subdomain match: *.vercel.app patterns in ALLOWED_ORIGINS
+    const wildcardMatch = corsOrigins.some((allowed) => {
+      if (!allowed.startsWith('*.')) return false;
+      const base = allowed.slice(2); // strip *.
+      return origin.endsWith('.' + base) || origin === 'https://' + base;
+    });
+    if (wildcardMatch) return callback(null, true);
     logger.warn({ origin }, 'CORS: rejected origin');
     callback(new Error('Not allowed by CORS'));
   },
-  credentials: false,
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-  optionsSuccessStatus: 200 // return 200 for OPTIONS preflight (not 204)
+  optionsSuccessStatus: 200
 };
 
 const helmetOptions = {
