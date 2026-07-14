@@ -1,7 +1,9 @@
 const express = require('express');
+const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const { trustProxy } = require('./config/env');
 const securityMiddleware = require('./middlewares/security.middleware');
+const { corsOptions } = securityMiddleware;
 const requestId = require('./middlewares/requestId.middleware');
 const errorHandler = require('./middlewares/error.middleware');
 const routes = require('./routes');
@@ -10,6 +12,9 @@ const accessLog = require('./middlewares/accessLog.middleware');
 
 const app = express();
 app.set('trust proxy', trustProxy);
+
+// Handle OPTIONS preflight before any auth or other middleware
+app.options('*', cors(corsOptions));
 
 app.use(securityMiddleware);
 app.use(requestId);
