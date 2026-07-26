@@ -4,9 +4,32 @@ const logger = require('../config/logger');
 const { publicBaseUrl } = require('../config/r2');
 
 const DEFAULT_THUMBNAIL_URL = process.env.DEFAULT_THUMBNAIL_URL || '';
-const BACKEND_URL = (process.env.APP_URL || '').replace(/^"|"$/g, '').replace(/^'|'$/g, '');
+const BACKEND_URL = (process.env.APP_URL || '').replace(/^["']|["']$/g, '');
 
 const router = express.Router();
+
+// Debug: check what videoUrl resolves to
+router.get('/debug/:shortCode', async (req, res) => {
+  const { shortCode } = req.params;
+  try {
+    const { link, video } = await linkService.resolveLinkByShortCode(shortCode);
+    const base = (publicBaseUrl || '').replace(/\/$/, '');
+    const videoUrl = video.storageKey && base
+      ? `${base}/${video.storageKey}`
+      : video.externalUrl || null;
+    res.json({
+      storageKey: video.storageKey,
+      publicBaseUrl: publicBaseUrl,
+      externalUrl: video.externalUrl,
+      videoUrl,
+      videoType: video.type,
+      videoStatus: video.status,
+      linkId: link._id
+    });
+  } catch (err) {
+    res.json({ error: err.message });
+  }
+});
 
 router.get('/watch/:shortCode', async (req, res) => {
   const { shortCode } = req.params;
@@ -24,9 +47,15 @@ router.get('/watch/:shortCode', async (req, res) => {
     description = video.description || description;
     thumbnailUrl = video.thumbnailUrl || DEFAULT_THUMBNAIL_URL || '';
     linkId = link._id.toString();
-    videoUrl = video.storageKey && publicBaseUrl
-      ? `${publicBaseUrl}/${video.storageKey}`
-      : video.externalUrl || null;
+
+    const base = (publicBaseUrl || '').replace(/\/$/, '');
+    if (video.storageKey && base) {
+      videoUrl = `${base}/${video.storageKey}`;
+    } else if (video.externalUrl) {
+      videoUrl = video.externalUrl;
+    }
+
+    logger.info({ shortCode, videoUrl, storageKey: video.storageKey, publicBaseUrl }, 'Watch page resolved');
   } catch (err) {
     logger.warn({ shortCode, errMsg: err.message }, 'Watch page: link not found');
     error = 'Video not found or link is inactive.';
@@ -36,7 +65,10 @@ router.get('/watch/:shortCode', async (req, res) => {
   const apiBase = `${BACKEND_URL}/api`;
   const e = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+  // CSP: allow inline scripts for this page
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'unsafe-inline'; media-src *; img-src * data:; connect-src *; style-src 'unsafe-inline'");
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
+
   res.send(`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -61,16 +93,16 @@ router.get('/watch/:shortCode', async (req, res) => {
     .wrap{width:100%;max-width:820px;padding:20px}
     .vbox{position:relative;width:100%;background:#111;border-radius:14px;overflow:hidden;box-shadow:0 4px 40px rgba(0,229,255,.12)}
     video{width:100%;display:block;max-height:72vh;background:#000}
-    .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;cursor:pointer;background:rgba(0,0,0,.35)}
-    .overlay img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.55}
-    .pbtn{position:relative;z-index:1;width:74px;height:74px;background:rgba(0,229,255,.92);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 0 36px rgba(0,229,255,.5);transition:transform .15s}
-    .pbtn:hover{transform:scale(1.08)}
+    .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;cursor:pointer;background:rgba(0,0,0,.4);z-index:2}
+    .overlay img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.5}
+    .pbtn{position:relative;z-index:3;width:74px;height:74px;background:rgba(0,229,255,.92);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 0 36px rgba(0,229,255,.5)}
     .info{padding:14px 0 6px}
     .vtitle{font-size:17px;font-weight:600;line-height:1.4;margin-bottom:6px}
     .vdesc{font-size:13px;color:#777;line-height:1.5;margin-bottom:10px}
     .badge{display:inline-flex;align-items:center;gap:5px;background:rgba(0,229,255,.08);border:1px solid rgba(0,229,255,.25);border-radius:20px;padding:4px 12px;font-size:12px;color:#00e5ff}
     .err{text-align:center;padding:80px 20px;color:#666}
     .err h2{color:#ff5252;margin-bottom:8px;font-size:20px}
+    .novid{text-align:center;padding:40px 20px;color:#555;font-size:13px}
   </style>
 </head>
 <body>
@@ -79,14 +111,15 @@ router.get('/watch/:shortCode', async (req, res) => {
     <span class="brand">ZEXGRAM</span>
   </div>
   <div class="wrap">
-    ${error ? `<div class="err"><h2>Video Unavailable</h2><p>${e(error)}</p></div>` : `
-    <div class="vbox" id="vbox">
-      <div class="overlay" id="ov" onclick="startPlay()">
+    ${error ? `<div class="err"><h2>Video Unavailable</h2><p>${e(error)}</p></div>` : !videoUrl ? `<div class="err"><h2>Video Unavailable</h2><p>Video file not ready. Please try again later.</p></div>` : `
+    <div class="vbox">
+      <div class="overlay" id="ov">
         ${thumbnailUrl ? `<img src="${e(thumbnailUrl)}" alt="">` : ''}
         <div class="pbtn"><svg width="30" height="30" viewBox="0 0 24 24" fill="#0a0a0a"><path d="M8 5v14l11-7z"/></svg></div>
       </div>
-      <video id="vid" preload="metadata" playsinline ${thumbnailUrl ? `poster="${e(thumbnailUrl)}"` : ''}>
-        <source src="${e(videoUrl || '')}" type="video/mp4">
+      <video id="vid" preload="none" playsinline controls ${thumbnailUrl ? `poster="${e(thumbnailUrl)}"` : ''}>
+        <source src="${e(videoUrl)}" type="video/mp4">
+        Your browser does not support video playback.
       </video>
     </div>
     <div class="info">
@@ -99,8 +132,14 @@ router.get('/watch/:shortCode', async (req, res) => {
   <script>
     var API='${apiBase}',LID='${linkId || ''}',sid=null,hb=null,lastPos=0;
     var vid=document.getElementById('vid');
+    var ov=document.getElementById('ov');
+
     function fp(){try{return btoa([navigator.language,screen.width,screen.height,navigator.hardwareConcurrency,new Date().getTimezoneOffset()].join('|')).slice(0,32)}catch(e){return 'browser'}}
-    async function post(path,body){try{await fetch(API+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})}catch(e){}}
+
+    async function post(path,body){
+      try{await fetch(API+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})}catch(e){}
+    }
+
     async function initSess(){
       if(!LID)return;
       try{
@@ -109,16 +148,25 @@ router.get('/watch/:shortCode', async (req, res) => {
         sid=(d.data&&d.data.sessionId)||d.sessionId||null;
       }catch(e){}
     }
+
     function ev(t,p){if(!sid)return;post('/playback/event',{sessionId:sid,eventType:t,positionSeconds:Math.floor(p||0)})}
     function fin(){if(!sid)return;post('/playback/finalize',{sessionId:sid});sid=null}
-    function startPlay(){
-      var o=document.getElementById('ov');
-      if(o)o.style.display='none';
-      if(vid)vid.play().catch(function(){});
+
+    if(ov){
+      ov.addEventListener('click',function(){
+        ov.style.display='none';
+        if(vid){
+          vid.load();
+          var p=vid.play();
+          if(p&&p.catch)p.catch(function(){});
+        }
+      });
     }
+
     if(vid){
       initSess();
       vid.addEventListener('play',function(){
+        if(ov)ov.style.display='none';
         ev('PLAY',vid.currentTime);
         clearInterval(hb);
         hb=setInterval(function(){ev('HEARTBEAT',vid.currentTime)},10000);
@@ -132,7 +180,7 @@ router.get('/watch/:shortCode', async (req, res) => {
       window.addEventListener('beforeunload',function(){clearInterval(hb);fin()});
       window.addEventListener('pagehide',function(){clearInterval(hb);fin()});
     }
-  <\/script>
+  </script>
 </body>
 </html>`);
 });
