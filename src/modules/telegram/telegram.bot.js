@@ -18,7 +18,7 @@ const Video = require('../videos/video.model');
 const Link = require('../links/link.model');
 const { VIDEO_STATUS } = require('../../common/enums');
 
-const FRONTEND_URL = process.env.FRONTEND_URL || 'https://clipnovawebistefronendvarsel-gyum.vercel.app';
+const FRONTEND_URL = (process.env.FRONTEND_URL || process.env.APP_URL || '').replace(/^"|"$/g, '').replace(/^'|'$/g, '');
 
 /* ─── Session Store ─────────────────────────────────────────────────────── */
 const MAX_SESSIONS = 5000;

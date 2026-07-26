@@ -4,7 +4,7 @@ const logger = require('../config/logger');
 const { publicBaseUrl } = require('../config/r2');
 
 const DEFAULT_THUMBNAIL_URL = process.env.DEFAULT_THUMBNAIL_URL || '';
-const BACKEND_URL = process.env.APP_URL || '';
+const BACKEND_URL = (process.env.APP_URL || '').replace(/^"|"$/g, '').replace(/^'|'$/g, '');
 
 const router = express.Router();
 
