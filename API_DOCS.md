@@ -2,6 +2,27 @@
 
 Base URL: `http://localhost:5000/api`
 
+## Currency
+
+All monetary values in the API are in **Indian Rupees (INR)** represented by the **₹** symbol.
+
+- Currency Code: `INR`
+- Currency Symbol: `₹`
+- Format: Amounts are returned as numbers with 2 decimal places
+- Display: API responses include both numeric values and formatted strings with ₹ symbol
+
+**Example Response:**
+```json
+{
+  "totalEarnings": 125.50,
+  "totalEarningsFormatted": "₹125.50",
+  "availableBalance": 100.00,
+  "availableBalanceFormatted": "₹100.00"
+}
+```
+
+---
+
 ## Authentication
 
 All protected endpoints require Bearer token in Authorization header:
@@ -129,6 +150,61 @@ POST /auth/change-password
   "newPassword": "newpass123"
 }
 ```
+
+---
+
+### Forgot Password
+```http
+POST /auth/forgot-password
+```
+
+**Body:**
+```json
+{
+  "email": "john@example.com"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "If the email exists, a password reset link will be sent",
+  "resetToken": "abc123...",
+  "resetLink": "https://frontend.com/reset-password?token=abc123..."
+}
+```
+
+**Note:** 
+- In production, the token is sent via email only (not in response)
+- In development mode, token is included in response for testing
+- Reset token expires in 1 hour
+- Token can only be used once
+
+---
+
+### Reset Password
+```http
+POST /auth/reset-password
+```
+
+**Body:**
+```json
+{
+  "token": "reset-token-from-email",
+  "newPassword": "newSecurePassword123"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Password reset successful. Please login with your new password."
+}
+```
+
+**Note:** All active sessions are logged out after password reset for security
 
 ---
 
@@ -426,20 +502,48 @@ GET /wallet
 {
   "creatorId": "creator-id",
   "totalEarnings": 150.50,
+  "totalEarningsFormatted": "₹150.50",
   "availableBalance": 120.00,
+  "availableBalanceFormatted": "₹120.00",
   "pendingBalance": 30.50,
-  "lifetimeWithdrawn": 500.00
+  "pendingBalanceFormatted": "₹30.50",
+  "lifetimeWithdrawn": 500.00,
+  "lifetimeWithdrawnFormatted": "₹500.00"
 }
 ```
+
+**Note:** All amounts are in Indian Rupees (INR). Both numeric and formatted string values are provided.
 
 ---
 
 ### Get Transactions
 ```http
-GET /wallet/transactions
+GET /wallet/transactions?limit=50
 ```
 
 **Headers:** Authorization required (Creator)
+
+**Query Parameters:**
+- `limit` (optional): Number of transactions to return (max 100, default 50)
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "_id": "txn-id",
+      "creatorId": "creator-id",
+      "type": "VIEW_EARNING",
+      "amount": 0.13,
+      "amountFormatted": "₹0.13",
+      "currency": "INR",
+      "description": "Earnings from valid view",
+      "createdAt": "2024-01-01T12:00:00Z"
+    }
+  ]
+}
+```
 
 ---
 
@@ -457,13 +561,45 @@ POST /withdrawals
 {
   "amount": 150,
   "paymentMethod": {
-    "type": "bank_transfer",
+    "type": "UPI",
+    "upiId": "user@paytm"
+  }
+}
+```
+
+**OR for Bank Transfer:**
+```json
+{
+  "amount": 150,
+  "paymentMethod": {
+    "type": "BANK_TRANSFER",
     "accountNumber": "1234567890",
     "ifsc": "BANK0001234",
     "accountName": "John Doe"
   }
 }
 ```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "_id": "withdrawal-id",
+    "creatorId": "creator-id",
+    "amount": 150.00,
+    "amountFormatted": "₹150.00",
+    "paymentMethod": { "type": "UPI", "upiId": "user@paytm" },
+    "status": "PENDING",
+    "createdAt": "2024-01-01T12:00:00Z"
+  }
+}
+```
+
+**Note:** 
+- Minimum withdrawal amount: ₹100 (configurable)
+- Only one pending withdrawal allowed at a time
+- Amounts are in Indian Rupees (INR)
 
 ---
 
@@ -533,18 +669,26 @@ PATCH /withdrawals/:id/paid
 
 ### Creator Overview
 ```http
-GET /analytics/overview
+GET /analytics/overview?startDate=2024-01-01&endDate=2024-01-31
 ```
 
 **Headers:** Authorization required (Creator)
 
+**Query Parameters:**
+- `startDate` (optional): Filter from date (ISO 8601 format)
+- `endDate` (optional): Filter to date (ISO 8601 format)
+
 **Response:**
 ```json
 {
-  "totalViews": 1000,
-  "validViews": 850,
-  "rejectedViews": 150,
-  "totalEarnings": 42.50
+  "success": true,
+  "data": {
+    "totalViews": 1000,
+    "validViews": 850,
+    "rejectedViews": 150,
+    "totalEarnings": 110.50,
+    "totalEarningsFormatted": "₹110.50"
+  }
 }
 ```
 
@@ -561,19 +705,38 @@ GET /analytics/videos/:videoId
 
 ### Admin Dashboard
 ```http
-GET /analytics/admin/dashboard
+GET /analytics/admin/dashboard?startDate=2024-01-01&endDate=2024-01-31
 ```
 
 **Headers:** Authorization required (Super Admin)
 
+**Query Parameters:**
+- `startDate` (optional): Filter from date (ISO 8601 format)
+- `endDate` (optional): Filter to date (ISO 8601 format)
+
 **Response:**
 ```json
 {
-  "totalViews": 50000,
-  "validViews": 42000,
-  "rejectedViews": 8000,
-  "totalEarnings": 2100.00,
-  "topCreators": [...]
+  "success": true,
+  "data": {
+    "totalViews": 50000,
+    "validViews": 42000,
+    "rejectedViews": 8000,
+    "totalEarnings": 5460.00,
+    "totalEarningsFormatted": "₹5460.00",
+    "topCreators": [
+      {
+        "_id": "creator-id",
+        "validViews": 1200,
+        "earnings": 156.00,
+        "earningsFormatted": "₹156.00",
+        "creator": {
+          "name": "John Doe",
+          "email": "john@example.com"
+        }
+      }
+    ]
+  }
 }
 ```
 
@@ -678,15 +841,24 @@ PATCH /settings
   "settings": [
     {
       "key": "earningsPerValidView",
-      "value": 0.10
+      "value": 0.13
     },
     {
       "key": "minimumWithdrawalAmount",
-      "value": 200
+      "value": 100
     }
   ]
 }
 ```
+
+**Available Settings:**
+- `earningsPerValidView` - Amount in ₹ earned per valid view (default: ₹0.13)
+- `minimumWithdrawalAmount` - Minimum withdrawal amount in ₹ (default: ₹100)
+- `maxViewsPerIpPerHour` - Max views from same IP per hour (default: 10)
+- `minimumWatchSeconds` - Minimum watch time for valid view (default: 5)
+- `defaultThumbnailUrl` - Default thumbnail URL for videos
+
+**Note:** All monetary settings are in Indian Rupees (INR)
 
 ---
 

@@ -17,6 +17,8 @@
 - ✅ Logout (single session)
 - ✅ Logout all sessions
 - ✅ Password change
+- ✅ **Forgot password flow** (NEW!)
+- ✅ **Password reset with email token** (NEW!)
 - ✅ Blocked user prevention
 - ✅ Secure password hashing (bcrypt)
 
@@ -117,27 +119,28 @@
 
 ---
 
-## 📊 Database Models (13 Models)
+## 📊 Database Models (14 Models)
 
 1. **User** - User accounts with roles
 2. **RefreshSession** - JWT refresh token sessions
-3. **Video** - Video metadata and status
-4. **UploadIntent** - R2 upload tracking
-5. **Link** - Short links for videos
-6. **PlaybackSession** - Playback session tracking
-7. **PlaybackEvent** - Detailed playback events
-8. **ViewLedger** - Immutable view validation records
-9. **Wallet** - Creator wallet balances
-10. **WalletTransaction** - Transaction history
-11. **WithdrawalRequest** - Withdrawal requests
-12. **FraudFlag** - Fraud detection flags
-13. **SystemSetting** - Configurable settings
+3. **PasswordResetToken** - Password reset tokens (NEW!)
+4. **Video** - Video metadata and status
+5. **UploadIntent** - R2 upload tracking
+6. **Link** - Short links for videos
+7. **PlaybackSession** - Playback session tracking
+8. **PlaybackEvent** - Detailed playback events
+9. **ViewLedger** - Immutable view validation records
+10. **Wallet** - Creator wallet balances
+11. **WalletTransaction** - Transaction history
+12. **WithdrawalRequest** - Withdrawal requests
+13. **FraudFlag** - Fraud detection flags
+14. **SystemSetting** - Configurable settings
 
 ---
 
-## 🔌 API Endpoints (50+ Endpoints)
+## 🔌 API Endpoints (52+ Endpoints)
 
-### Authentication (7 endpoints)
+### Authentication (9 endpoints)
 - POST /auth/register
 - POST /auth/login
 - POST /auth/refresh
@@ -145,6 +148,8 @@
 - POST /auth/logout-all
 - GET /auth/me
 - POST /auth/change-password
+- **POST /auth/forgot-password** (NEW!)
+- **POST /auth/reset-password** (NEW!)
 
 ### Videos (5 endpoints)
 - POST /videos
@@ -231,6 +236,12 @@ src/
 ---
 
 ## 💰 Business Logic
+
+### Currency
+- **All amounts are in Indian Rupees (INR) ₹** (UPDATED!)
+- API responses include both numeric values and formatted strings
+- Format: `₹XXX.XX` with 2 decimal places
+- Currency code: `INR`
 
 ### Video Types
 - **DIRECT_UPLOAD**: Monetized, uploaded to R2

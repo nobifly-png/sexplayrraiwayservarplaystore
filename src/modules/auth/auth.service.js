@@ -3,13 +3,15 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const User = require('../users/user.model');
 const RefreshSession = require('./refreshSession.model');
+const PasswordResetToken = require('./passwordResetToken.model');
 const Wallet = require('../wallet/wallet.model');
 const { generateAccessToken, generateRefreshToken, verifyRefreshToken } = require('../../config/jwt');
 const { hashToken } = require('../../common/utils');
-const { ConflictError, UnauthorizedError, BadRequestError } = require('../../common/errors');
+const { ConflictError, UnauthorizedError, BadRequestError, NotFoundError } = require('../../common/errors');
 const { USER_ROLES, USER_STATUS, AUDIT_ACTION, AUDIT_ENTITY_TYPE } = require('../../common/enums');
 const { isSuperAdminEmailAllowed } = require('../../config/superAdminPolicy');
 const auditService = require('../audit/audit.service');
+const logger = require('../../config/logger');
 
 class AuthService {
   async register(data, ipAddress, userAgent) {
@@ -201,6 +203,112 @@ class AuthService {
       entityId: userId
     });
   }
+
+  async forgotPassword(email) {
+    const user = await User.findOne({ email });
+    
+    // Security: Don't reveal if email exists or not
+    if (!user) {
+      logger.info({ email }, 'Forgot password requested for non-existent email');
+      return {
+        success: true,
+        message: 'If the email exists, a password reset link will be sent'
+      };
+    }
+
+    if (user.status === USER_STATUS.BLOCKED) {
+      throw new BadRequestError('Account is blocked');
+    }
+
+    // Invalidate any existing unused tokens for this user
+    await PasswordResetToken.updateMany(
+      { userId: user._id, isUsed: false },
+      { isUsed: true, usedAt: new Date() }
+    );
+
+    // Generate secure random token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await PasswordResetToken.create({
+      userId: user._id,
+      token: resetToken,
+      expiresAt
+    });
+
+    // TODO: Send email with reset link
+    // For now, we'll return the token in development mode
+    // In production, this should send an email
+    logger.info({ userId: user._id, email }, 'Password reset token generated');
+
+    // In development, return token for testing
+    // In production, remove this and only send via email
+    if (process.env.NODE_ENV === 'development') {
+      return {
+        success: true,
+        message: 'Password reset token generated',
+        resetToken, // Only in development!
+        resetLink: `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`
+      };
+    }
+
+    return {
+      success: true,
+      message: 'If the email exists, a password reset link will be sent'
+    };
+  }
+
+  async resetPassword(token, newPassword) {
+    const resetToken = await PasswordResetToken.findOne({
+      token,
+      isUsed: false,
+      expiresAt: { $gt: new Date() }
+    });
+
+    if (!resetToken) {
+      throw new BadRequestError('Invalid or expired reset token');
+    }
+
+    const user = await User.findById(resetToken.userId);
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+
+    if (user.status === USER_STATUS.BLOCKED) {
+      throw new BadRequestError('Account is blocked');
+    }
+
+    // Update password
+    user.passwordHash = await bcrypt.hash(newPassword, 12);
+    await user.save();
+
+    // Mark token as used
+    resetToken.isUsed = true;
+    resetToken.usedAt = new Date();
+    await resetToken.save();
+
+    // Logout all sessions for security
+    await RefreshSession.updateMany(
+      { userId: user._id, revokedAt: null },
+      { revokedAt: new Date() }
+    );
+
+    logger.info({ userId: user._id }, 'Password reset successful');
+
+    auditService.logAction({
+      userId: user._id,
+      action: AUDIT_ACTION.PASSWORD_CHANGED,
+      entityType: AUDIT_ENTITY_TYPE.USER,
+      entityId: user._id
+    });
+
+    return {
+      success: true,
+      message: 'Password reset successful. Please login with your new password.'
+    };
+  }
 }
+
+module.exports = new AuthService();
 
 module.exports = new AuthService();

@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const path = require('path');
 const { customAlphabet } = require('nanoid');
+const { formatCurrency, formatCurrencyInt, getCurrencySymbol, getCurrencyCode } = require('./currency');
 
 const sanitizeUploadFileName = (raw) => {
   if (typeof raw !== 'string') {
@@ -68,5 +69,9 @@ module.exports = {
   generateStorageKey,
   parseUserAgent,
   getDeviceType,
-  generateIdempotencyKey
+  generateIdempotencyKey,
+  formatCurrency,
+  formatCurrencyInt,
+  getCurrencySymbol,
+  getCurrencyCode
 };

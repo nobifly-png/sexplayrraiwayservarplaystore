@@ -20,15 +20,16 @@ ClipNova is a video monetization backend where creators can upload videos or add
 ## Features
 
 ### Core Features
-- ✅ User authentication with JWT
+- ✅ User authentication with JWT (access + refresh tokens)
+- ✅ Password reset via forgot password flow
 - ✅ Creator and Super Admin roles
 - ✅ Direct video upload to Cloudflare R2
 - ✅ External video reference support
 - ✅ Short link generation
 - ✅ Playback session tracking
 - ✅ View validation with fraud detection
-- ✅ Earnings calculation
-- ✅ Wallet management
+- ✅ Earnings calculation (in Indian Rupees ₹)
+- ✅ Wallet management with formatted currency display
 - ✅ Withdrawal system
 - ✅ Analytics dashboard
 - ✅ Admin controls
@@ -99,6 +100,8 @@ See `.env.example` for all required environment variables:
 - `POST /api/auth/logout-all` - Logout all sessions
 - `GET /api/auth/me` - Get current user
 - `POST /api/auth/change-password` - Change password
+- `POST /api/auth/forgot-password` - Request password reset
+- `POST /api/auth/reset-password` - Reset password with token
 
 ### Videos
 - `POST /api/videos` - Create video

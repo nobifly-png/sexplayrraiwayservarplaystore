@@ -1,5 +1,6 @@
 const withdrawalService = require('./withdrawal.service');
 const { successResponse } = require('../../common/helpers/response.helper');
+const { formatCurrency } = require('../../common/utils');
 
 class WithdrawalController {
   async createWithdrawal(req, res, next) {
@@ -9,7 +10,14 @@ class WithdrawalController {
         req.body.amount,
         req.body.paymentMethod
       );
-      successResponse(res, withdrawal, 'Withdrawal request created', 201);
+      
+      // Format currency for display
+      const formattedWithdrawal = {
+        ...withdrawal.toObject(),
+        amountFormatted: formatCurrency(withdrawal.amount)
+      };
+      
+      successResponse(res, formattedWithdrawal, 'Withdrawal request created', 201);
     } catch (error) {
       next(error);
     }
@@ -18,7 +26,14 @@ class WithdrawalController {
   async getWithdrawals(req, res, next) {
     try {
       const withdrawals = await withdrawalService.getCreatorWithdrawals(req.user.userId);
-      successResponse(res, withdrawals, 'Withdrawals retrieved');
+      
+      // Format currency for each withdrawal
+      const formattedWithdrawals = withdrawals.map(w => ({
+        ...w.toObject(),
+        amountFormatted: formatCurrency(w.amount)
+      }));
+      
+      successResponse(res, formattedWithdrawals, 'Withdrawals retrieved');
     } catch (error) {
       next(error);
     }
@@ -26,8 +41,15 @@ class WithdrawalController {
 
   async getAllWithdrawals(req, res, next) {
     try {
-      const withdrawals = await withdrawalService.getAllWithdrawals(req.query);
-      successResponse(res, withdrawals, 'All withdrawals retrieved');
+      const result = await withdrawalService.getAllWithdrawals(req.query);
+      
+      // Format currency for each withdrawal
+      const formattedWithdrawals = result.withdrawals.map(w => ({
+        ...w.toObject(),
+        amountFormatted: formatCurrency(w.amount)
+      }));
+      
+      successResponse(res, { ...result, withdrawals: formattedWithdrawals }, 'All withdrawals retrieved');
     } catch (error) {
       next(error);
     }
@@ -40,7 +62,14 @@ class WithdrawalController {
         req.user.userId,
         req.body.adminNote
       );
-      successResponse(res, withdrawal, 'Withdrawal approved');
+      
+      // Format currency for display
+      const formattedWithdrawal = {
+        ...withdrawal.toObject(),
+        amountFormatted: formatCurrency(withdrawal.amount)
+      };
+      
+      successResponse(res, formattedWithdrawal, 'Withdrawal approved');
     } catch (error) {
       next(error);
     }
@@ -53,7 +82,14 @@ class WithdrawalController {
         req.user.userId,
         req.body.adminNote
       );
-      successResponse(res, withdrawal, 'Withdrawal rejected');
+      
+      // Format currency for display
+      const formattedWithdrawal = {
+        ...withdrawal.toObject(),
+        amountFormatted: formatCurrency(withdrawal.amount)
+      };
+      
+      successResponse(res, formattedWithdrawal, 'Withdrawal rejected');
     } catch (error) {
       next(error);
     }
@@ -62,7 +98,14 @@ class WithdrawalController {
   async markAsPaid(req, res, next) {
     try {
       const withdrawal = await withdrawalService.markAsPaid(req.params.id, req.user.userId);
-      successResponse(res, withdrawal, 'Withdrawal marked as paid');
+      
+      // Format currency for display
+      const formattedWithdrawal = {
+        ...withdrawal.toObject(),
+        amountFormatted: formatCurrency(withdrawal.amount)
+      };
+      
+      successResponse(res, formattedWithdrawal, 'Withdrawal marked as paid');
     } catch (error) {
       next(error);
     }
