@@ -10,10 +10,12 @@ const emailConfig = {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASSWORD
   },
+  // Force IPv4 - Railway does not support IPv6 outbound connections
+  family: 4,
   // Timeout settings - prevent hanging requests
-  connectionTimeout: 5000,   // 5 seconds to connect
-  greetingTimeout: 5000,     // 5 seconds for greeting
-  socketTimeout: 8000        // 8 seconds for socket
+  connectionTimeout: 10000,  // 10 seconds to connect
+  greetingTimeout: 10000,    // 10 seconds for greeting
+  socketTimeout: 15000       // 15 seconds for socket
 };
 
 // Create transporter
