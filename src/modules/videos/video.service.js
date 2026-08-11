@@ -42,13 +42,45 @@ class VideoService {
     if (type) query.type = type;
 
     const skip = (page - 1) * limit;
-    return await Video.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit);
+    
+    // Populate the first active link for each video
+    const Link = require('../links/link.model');
+    const videos = await Video.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).lean();
+    
+    // Fetch links for all videos in parallel
+    const videoIds = videos.map(v => v._id);
+    const links = await Link.find({ 
+      videoId: { $in: videoIds }, 
+      isActive: true 
+    }).sort({ createdAt: 1 }).lean();
+    
+    // Map first link to each video
+    const linksByVideoId = {};
+    links.forEach(link => {
+      if (!linksByVideoId[link.videoId.toString()]) {
+        linksByVideoId[link.videoId.toString()] = link;
+      }
+    });
+    
+    // Attach link to each video
+    return videos.map(video => ({
+      ...video,
+      link: linksByVideoId[video._id.toString()] || null
+    }));
   }
 
   async getVideoById(videoId, creatorId) {
-    const video = await Video.findOne({ _id: videoId, creatorId, isDeleted: false });
+    const video = await Video.findOne({ _id: videoId, creatorId, isDeleted: false }).lean();
     if (!video) throw new NotFoundError('Video not found');
-    return video;
+    
+    // Fetch the first active link for this video
+    const Link = require('../links/link.model');
+    const link = await Link.findOne({ videoId, isActive: true }).sort({ createdAt: 1 }).lean();
+    
+    return {
+      ...video,
+      link: link || null
+    };
   }
 
   async updateVideo(videoId, creatorId, data, auditCtx = {}) {
