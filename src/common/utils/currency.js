@@ -1,13 +1,15 @@
 const { CURRENCY } = require('../constants');
 
 /**
- * Format amount in USD
+ * Format amount in USD with 3 decimal places for small amounts
  * @param {number} amount - Amount to format
  * @param {boolean} includeSymbol - Include $ symbol (default: true)
  * @returns {string} Formatted currency string
  */
 const formatCurrency = (amount, includeSymbol = true) => {
-  const formatted = Number(amount).toFixed(2);
+  // Use 3 decimals for amounts less than $1, otherwise 2 decimals
+  const decimals = Math.abs(amount) < 1 ? 3 : 2;
+  const formatted = Number(amount).toFixed(decimals);
   return includeSymbol ? `$${formatted}` : formatted;
 };
 

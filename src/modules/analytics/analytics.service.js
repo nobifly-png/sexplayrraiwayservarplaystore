@@ -3,6 +3,7 @@ const PlaybackSession = require('../playback/playbackSession.model');
 const Video = require('../videos/video.model');
 const Link = require('../links/link.model');
 const { VIEW_TYPE } = require('../../common/enums');
+const { VIEW_TO_COUNTED_RATIO } = require('../../common/constants');
 const { NotFoundError } = require('../../common/errors');
 const mongoose = require('mongoose');
 
@@ -14,6 +15,13 @@ const buildDateMatch = (startDate, endDate) => {
   return { createdAt: range };
 };
 
+/**
+ * Convert real views to counted views (4 real views = 1 counted view)
+ */
+const calculateCountedViews = (realViews) => {
+  return realViews / VIEW_TO_COUNTED_RATIO;
+};
+
 class AnalyticsService {
   async getCreatorOverview(creatorId, { startDate, endDate } = {}) {
     const creatorObjectId = new mongoose.Types.ObjectId(creatorId);
@@ -22,7 +30,7 @@ class AnalyticsService {
     const sessionMatch = { creatorId: creatorObjectId, ...dateMatch };
     const ledgerMatch = { creatorId: creatorObjectId, ...dateMatch };
 
-    const [totalViews, validViews, rejectedViews, earningsResult] = await Promise.all([
+    const [totalRealViews, validRealViews, rejectedRealViews, earningsResult] = await Promise.all([
       PlaybackSession.countDocuments(sessionMatch),
       ViewLedger.countDocuments({ ...ledgerMatch, viewType: VIEW_TYPE.VALID }),
       ViewLedger.countDocuments({ ...ledgerMatch, viewType: VIEW_TYPE.REJECTED }),
@@ -32,10 +40,11 @@ class AnalyticsService {
       ])
     ]);
 
+    // Convert to counted views (4:1 ratio)
     return {
-      totalViews,
-      validViews,
-      rejectedViews,
+      totalViews: calculateCountedViews(totalRealViews),
+      validViews: calculateCountedViews(validRealViews),
+      rejectedViews: calculateCountedViews(rejectedRealViews),
       totalEarnings: earningsResult[0]?.totalEarnings || 0
     };
   }
@@ -49,7 +58,7 @@ class AnalyticsService {
     const dateMatch = buildDateMatch(startDate, endDate);
     const ledgerMatch = { videoId: videoObjectId, ...dateMatch };
 
-    const [totalViews, validViews, rejectedViews, earningsResult] = await Promise.all([
+    const [totalRealViews, validRealViews, rejectedRealViews, earningsResult] = await Promise.all([
       PlaybackSession.countDocuments({ videoId: videoObjectId, ...dateMatch }),
       ViewLedger.countDocuments({ ...ledgerMatch, viewType: VIEW_TYPE.VALID }),
       ViewLedger.countDocuments({ ...ledgerMatch, viewType: VIEW_TYPE.REJECTED }),
@@ -59,11 +68,12 @@ class AnalyticsService {
       ])
     ]);
 
+    // Convert to counted views (4:1 ratio)
     return {
       video: { id: video._id, title: video.title, type: video.type },
-      totalViews,
-      validViews,
-      rejectedViews,
+      totalViews: calculateCountedViews(totalRealViews),
+      validViews: calculateCountedViews(validRealViews),
+      rejectedViews: calculateCountedViews(rejectedRealViews),
       totalEarnings: earningsResult[0]?.totalEarnings || 0
     };
   }
@@ -89,7 +99,11 @@ class AnalyticsService {
       { $sort: { '_id.date': 1 } }
     ]);
 
-    return series;
+    // Convert counts to counted views (4:1 ratio)
+    return series.map(entry => ({
+      ...entry,
+      count: calculateCountedViews(entry.count)
+    }));
   }
 
   async getLinkAnalytics(creatorId, linkId) {
@@ -99,7 +113,7 @@ class AnalyticsService {
     const link = await Link.findOne({ _id: linkObjectId, creatorId: creatorObjectId });
     if (!link) throw new NotFoundError('Link not found');
 
-    const [totalViews, validViews, rejectedViews, earningsResult] = await Promise.all([
+    const [totalRealViews, validRealViews, rejectedRealViews, earningsResult] = await Promise.all([
       PlaybackSession.countDocuments({ linkId: linkObjectId }),
       ViewLedger.countDocuments({ linkId: linkObjectId, viewType: VIEW_TYPE.VALID }),
       ViewLedger.countDocuments({ linkId: linkObjectId, viewType: VIEW_TYPE.REJECTED }),
@@ -109,11 +123,12 @@ class AnalyticsService {
       ])
     ]);
 
+    // Convert to counted views (4:1 ratio)
     return {
       link: { id: link._id, shortCode: link.shortCode, isActive: link.isActive },
-      totalViews,
-      validViews,
-      rejectedViews,
+      totalViews: calculateCountedViews(totalRealViews),
+      validViews: calculateCountedViews(validRealViews),
+      rejectedViews: calculateCountedViews(rejectedRealViews),
       totalEarnings: earningsResult[0]?.totalEarnings || 0
     };
   }
@@ -121,7 +136,7 @@ class AnalyticsService {
   async getAdminDashboard({ startDate, endDate } = {}) {
     const dateMatch = buildDateMatch(startDate, endDate);
 
-    const [totalViews, validViews, rejectedViews, earningsResult, topCreatorsRaw] = await Promise.all([
+    const [totalRealViews, validRealViews, rejectedRealViews, earningsResult, topCreatorsRaw] = await Promise.all([
       PlaybackSession.countDocuments(dateMatch),
       ViewLedger.countDocuments({ ...dateMatch, viewType: VIEW_TYPE.VALID }),
       ViewLedger.countDocuments({ ...dateMatch, viewType: VIEW_TYPE.REJECTED }),
@@ -146,12 +161,19 @@ class AnalyticsService {
       ])
     ]);
 
+    // Convert top creators views to counted views
+    const topCreators = topCreatorsRaw.map(creator => ({
+      ...creator,
+      validViews: calculateCountedViews(creator.validViews)
+    }));
+
+    // Convert to counted views (4:1 ratio)
     return {
-      totalViews,
-      validViews,
-      rejectedViews,
+      totalViews: calculateCountedViews(totalRealViews),
+      validViews: calculateCountedViews(validRealViews),
+      rejectedViews: calculateCountedViews(rejectedRealViews),
       totalEarnings: earningsResult[0]?.totalEarnings || 0,
-      topCreators: topCreatorsRaw
+      topCreators
     };
   }
 }

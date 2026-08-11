@@ -178,8 +178,18 @@ A view is valid only if:
 5. IP abuse limits not exceeded
 
 ### Earnings
-- Default: ₹0.05 per valid view (configurable)
+- **View Counting System:** 4 real views = 1 counted view
+- **Earnings Rate:** $4 per 1000 counted views ($0.001 per real view)
 - Only DIRECT_UPLOAD videos earn
+- Idempotent ledger prevents double-crediting
+- Real-time fractional counting (0.25, 0.50, 0.75, 1.00...)
+- Admin sees **counted views only** (not real views)
+
+**Examples:**
+- 1 real view → $0.001
+- 4 real views → $0.004 (1 counted view)
+- 400 real views → $0.40 (100 counted views)
+- 4000 real views → $4.00 (1000 counted views)
 - Idempotent ledger system prevents double-crediting
 
 ### Withdrawals

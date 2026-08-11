@@ -488,12 +488,18 @@ GET /wallet
 ```json
 {
   "creatorId": "creator-id",
-  "totalEarnings": 150.50,
-  "availableBalance": 120.00,
-  "pendingBalance": 30.50,
-  "lifetimeWithdrawn": 500.00
+  "totalEarnings": 1.256,
+  "availableBalance": 1.200,
+  "pendingBalance": 0.056,
+  "lifetimeWithdrawn": 0.000
 }
 ```
+
+**Note:** 
+- Amounts less than $1 show 3 decimal places
+- Amounts $1+ show 2 decimal places
+- Earnings calculated at $0.001 per real view
+- Example: 1256 real views = $1.256
 
 ---
 
@@ -626,13 +632,19 @@ GET /analytics/overview?startDate=2024-01-01&endDate=2024-01-31
 {
   "success": true,
   "data": {
-    "totalViews": 1000,
-    "validViews": 850,
-    "rejectedViews": 150,
-    "totalEarnings": 110.50
+    "totalViews": 250,
+    "validViews": 212.5,
+    "rejectedViews": 37.5,
+    "totalEarnings": 0.850
   }
 }
 ```
+
+**Note:** 
+- Views are **counted views** (real views / 4)
+- Example: 1000 real views = 250 counted views
+- Earnings: $0.001 per real view
+- Display shows 3 decimals for amounts < $1
 
 ---
 
@@ -661,14 +673,16 @@ GET /analytics/admin/dashboard?startDate=2024-01-01&endDate=2024-01-31
 {
   "success": true,
   "data": {
-    "totalViews": 50000,
-    "validViews": 42000,
-    "rejectedViews": 8000,
-    "totalEarnings": 5460.00,
+    "totalViews": 12500,
+    "validViews": 10500,
+    "rejectedViews": 2000,
+    "totalEarnings": 42.00,
     "topCreators": [...]
   }
 }
 ```
+
+**Note:** All view counts are **counted views** (real views divided by 4)
 
 ---
 
@@ -771,7 +785,7 @@ PATCH /settings
   "settings": [
     {
       "key": "earningsPerValidView",
-      "value": 0.13
+      "value": 0.001
     },
     {
       "key": "minimumWithdrawalAmount",
@@ -782,11 +796,26 @@ PATCH /settings
 ```
 
 **Available Settings:**
-- `earningsPerValidView` - Amount earned per valid view (default: $0.13)
+- `earningsPerValidView` - Amount earned per valid view (default: $0.001)
 - `minimumWithdrawalAmount` - Minimum withdrawal amount (default: $100)
 - `maxViewsPerIpPerHour` - Max views from same IP per hour (default: 10)
 - `minimumWatchSeconds` - Minimum watch time for valid view (default: 5)
 - `defaultThumbnailUrl` - Default thumbnail URL for videos
+
+**View Counting System:**
+- **4 real views = 1 counted view** (displayed to admin)
+- **1000 counted views = $4.00** 
+- **Per view earnings = $0.001**
+- Admin dashboard shows **counted views only** (not real views)
+- Earnings display with 3 decimals: $0.001, $0.002, $0.003, etc.
+- Real-time fractional counting for transparent earnings tracking
+
+**Examples:**
+- 1 real view → 0.25 counted views → $0.001
+- 4 real views → 1 counted view → $0.004
+- 40 real views → 10 counted views → $0.04
+- 400 real views → 100 counted views → $0.40
+- 4000 real views → 1000 counted views → $4.00
 
 ---
 
