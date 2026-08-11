@@ -307,7 +307,7 @@ class TelegramBotService {
       `👁 Total Views: ${stats.totalViews}\n` +
       `✅ Valid Views: ${stats.validViews}\n` +
       `❌ Rejected: ${stats.rejectedViews}\n` +
-      `💰 Earnings: ₹${stats.totalEarnings.toFixed(2)}`
+      `💰 Earnings: $${stats.totalEarnings.toFixed(2)}`
     );
   }
 
@@ -319,10 +319,10 @@ class TelegramBotService {
     const wallet = await walletService.getWallet(session.userId);
     await ctx.reply(
       '💰 Wallet:\n\n' +
-      `Available: ₹${wallet.availableBalance.toFixed(2)}\n` +
-      `Pending: ₹${wallet.pendingBalance.toFixed(2)}\n` +
-      `Total Earned: ₹${wallet.totalEarnings.toFixed(2)}\n` +
-      `Withdrawn: ₹${wallet.lifetimeWithdrawn.toFixed(2)}`
+      `Available: $${wallet.availableBalance.toFixed(2)}\n` +
+      `Pending: $${wallet.pendingBalance.toFixed(2)}\n` +
+      `Total Earned: $${wallet.totalEarnings.toFixed(2)}\n` +
+      `Withdrawn: $${wallet.lifetimeWithdrawn.toFixed(2)}`
     );
   }
 

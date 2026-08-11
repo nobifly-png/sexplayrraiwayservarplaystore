@@ -19,7 +19,7 @@ class WithdrawalService {
         const minAmount = getMinimumWithdrawalAmount(minWithdrawalSetting);
 
         if (amount < minAmount) {
-          throw new BadRequestError(`Minimum withdrawal amount is ₹${minAmount}`);
+          throw new BadRequestError(`Minimum withdrawal amount is $${minAmount}`);
         }
 
         const wallet = await Wallet.findOneAndUpdate(

@@ -28,8 +28,8 @@ ClipNova is a video monetization backend where creators can upload videos or add
 - ✅ Short link generation
 - ✅ Playback session tracking
 - ✅ View validation with fraud detection
-- ✅ Earnings calculation (in Indian Rupees ₹)
-- ✅ Wallet management with formatted currency display
+- ✅ Earnings calculation
+- ✅ Wallet management
 - ✅ Withdrawal system
 - ✅ Analytics dashboard
 - ✅ Admin controls

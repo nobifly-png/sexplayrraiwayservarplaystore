@@ -2,27 +2,6 @@
 
 Base URL: `http://localhost:5000/api`
 
-## Currency
-
-All monetary values in the API are in **Indian Rupees (INR)** represented by the **₹** symbol.
-
-- Currency Code: `INR`
-- Currency Symbol: `₹`
-- Format: Amounts are returned as numbers with 2 decimal places
-- Display: API responses include both numeric values and formatted strings with ₹ symbol
-
-**Example Response:**
-```json
-{
-  "totalEarnings": 125.50,
-  "totalEarningsFormatted": "₹125.50",
-  "availableBalance": 100.00,
-  "availableBalanceFormatted": "₹100.00"
-}
-```
-
----
-
 ## Authentication
 
 All protected endpoints require Bearer token in Authorization header:
@@ -502,17 +481,11 @@ GET /wallet
 {
   "creatorId": "creator-id",
   "totalEarnings": 150.50,
-  "totalEarningsFormatted": "₹150.50",
   "availableBalance": 120.00,
-  "availableBalanceFormatted": "₹120.00",
   "pendingBalance": 30.50,
-  "pendingBalanceFormatted": "₹30.50",
-  "lifetimeWithdrawn": 500.00,
-  "lifetimeWithdrawnFormatted": "₹500.00"
+  "lifetimeWithdrawn": 500.00
 }
 ```
-
-**Note:** All amounts are in Indian Rupees (INR). Both numeric and formatted string values are provided.
 
 ---
 
@@ -525,25 +498,6 @@ GET /wallet/transactions?limit=50
 
 **Query Parameters:**
 - `limit` (optional): Number of transactions to return (max 100, default 50)
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "_id": "txn-id",
-      "creatorId": "creator-id",
-      "type": "VIEW_EARNING",
-      "amount": 0.13,
-      "amountFormatted": "₹0.13",
-      "currency": "INR",
-      "description": "Earnings from valid view",
-      "createdAt": "2024-01-01T12:00:00Z"
-    }
-  ]
-}
-```
 
 ---
 
@@ -580,26 +534,7 @@ POST /withdrawals
 }
 ```
 
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "_id": "withdrawal-id",
-    "creatorId": "creator-id",
-    "amount": 150.00,
-    "amountFormatted": "₹150.00",
-    "paymentMethod": { "type": "UPI", "upiId": "user@paytm" },
-    "status": "PENDING",
-    "createdAt": "2024-01-01T12:00:00Z"
-  }
-}
-```
-
-**Note:** 
-- Minimum withdrawal amount: ₹100 (configurable)
-- Only one pending withdrawal allowed at a time
-- Amounts are in Indian Rupees (INR)
+**Note:** Minimum withdrawal amount: $100 (configurable)
 
 ---
 
@@ -686,8 +621,7 @@ GET /analytics/overview?startDate=2024-01-01&endDate=2024-01-31
     "totalViews": 1000,
     "validViews": 850,
     "rejectedViews": 150,
-    "totalEarnings": 110.50,
-    "totalEarningsFormatted": "₹110.50"
+    "totalEarnings": 110.50
   }
 }
 ```
@@ -723,19 +657,7 @@ GET /analytics/admin/dashboard?startDate=2024-01-01&endDate=2024-01-31
     "validViews": 42000,
     "rejectedViews": 8000,
     "totalEarnings": 5460.00,
-    "totalEarningsFormatted": "₹5460.00",
-    "topCreators": [
-      {
-        "_id": "creator-id",
-        "validViews": 1200,
-        "earnings": 156.00,
-        "earningsFormatted": "₹156.00",
-        "creator": {
-          "name": "John Doe",
-          "email": "john@example.com"
-        }
-      }
-    ]
+    "topCreators": [...]
   }
 }
 ```
@@ -852,13 +774,11 @@ PATCH /settings
 ```
 
 **Available Settings:**
-- `earningsPerValidView` - Amount in ₹ earned per valid view (default: ₹0.13)
-- `minimumWithdrawalAmount` - Minimum withdrawal amount in ₹ (default: ₹100)
+- `earningsPerValidView` - Amount earned per valid view (default: $0.13)
+- `minimumWithdrawalAmount` - Minimum withdrawal amount (default: $100)
 - `maxViewsPerIpPerHour` - Max views from same IP per hour (default: 10)
 - `minimumWatchSeconds` - Minimum watch time for valid view (default: 5)
 - `defaultThumbnailUrl` - Default thumbnail URL for videos
-
-**Note:** All monetary settings are in Indian Rupees (INR)
 
 ---
 

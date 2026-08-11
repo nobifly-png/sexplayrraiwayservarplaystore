@@ -237,12 +237,6 @@ src/
 
 ## 💰 Business Logic
 
-### Currency
-- **All amounts are in Indian Rupees (INR) ₹** (UPDATED!)
-- API responses include both numeric values and formatted strings
-- Format: `₹XXX.XX` with 2 decimal places
-- Currency code: `INR`
-
 ### Video Types
 - **DIRECT_UPLOAD**: Monetized, uploaded to R2
 - **EXTERNAL_REF**: Non-monetized, external URL reference
