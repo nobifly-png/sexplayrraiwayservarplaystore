@@ -89,6 +89,17 @@ See `.env.example` for all required environment variables:
 - `R2_SECRET_ACCESS_KEY` - R2 secret key
 - `R2_BUCKET_NAME` - R2 bucket name
 - `R2_PUBLIC_URL` - Public URL for R2 bucket
+- `EMAIL_USER` - Email address for sending emails (optional)
+- `EMAIL_PASSWORD` - Email password/app password (optional)
+- `EMAIL_HOST` - SMTP host (default: smtp.gmail.com)
+- `EMAIL_PORT` - SMTP port (default: 587)
+
+**Note:** Email configuration is optional. If not configured, forgot password will work in development mode (token returned in response). For production, email must be configured to send password reset links.
+
+**Gmail Setup:**
+1. Enable 2-Factor Authentication on your Google account
+2. Generate App Password at: https://myaccount.google.com/apppasswords
+3. Use the 16-character app password (not your regular Gmail password)
 
 ## API Endpoints
 

@@ -148,16 +148,24 @@ POST /auth/forgot-password
 ```json
 {
   "success": true,
-  "message": "If the email exists, a password reset link will be sent",
-  "resetToken": "abc123...",
-  "resetLink": "https://frontend.com/reset-password?token=abc123..."
+  "message": "If the email exists, a password reset link has been sent to your email"
 }
 ```
 
+**Email Sent:**
+- Subject: "Reset Your Password - ClipNova"
+- Contains a clickable button with reset link
+- Link format: `https://frontend.com/reset-password?token=abc123xyz`
+- Professional HTML email template with styling
+- Link expires in 1 hour
+- Link can only be used once
+
 **Note:** 
-- In production, the token is sent via email only (not in response)
-- In development mode, token is included in response for testing
-- Reset token expires in 1 hour
+- For security, API always returns success (doesn't reveal if email exists)
+- Email is sent only if account exists and is not blocked
+- In development mode (if email service fails), token is returned in response
+- Email service must be configured with EMAIL_* environment variables
+- Uses Nodemailer for sending emails
 - Token can only be used once
 
 ---

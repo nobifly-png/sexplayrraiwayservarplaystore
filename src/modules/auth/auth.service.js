@@ -12,6 +12,7 @@ const { USER_ROLES, USER_STATUS, AUDIT_ACTION, AUDIT_ENTITY_TYPE } = require('..
 const { isSuperAdminEmailAllowed } = require('../../config/superAdminPolicy');
 const auditService = require('../audit/audit.service');
 const logger = require('../../config/logger');
+const { sendPasswordResetEmail } = require('../../config/email');
 
 class AuthService {
   async register(data, ipAddress, userAgent) {
@@ -212,7 +213,7 @@ class AuthService {
       logger.info({ email }, 'Forgot password requested for non-existent email');
       return {
         success: true,
-        message: 'If the email exists, a password reset link will be sent'
+        message: 'If the email exists, a password reset link has been sent to your email'
       };
     }
 
@@ -236,25 +237,30 @@ class AuthService {
       expiresAt
     });
 
-    // TODO: Send email with reset link
-    // For now, we'll return the token in development mode
-    // In production, this should send an email
-    logger.info({ userId: user._id, email }, 'Password reset token generated');
-
-    // In development, return token for testing
-    // In production, remove this and only send via email
-    if (process.env.NODE_ENV === 'development') {
-      return {
-        success: true,
-        message: 'Password reset token generated',
-        resetToken, // Only in development!
-        resetLink: `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`
-      };
+    // Send password reset email
+    try {
+      await sendPasswordResetEmail(user.email, resetToken);
+      logger.info({ userId: user._id, email: user.email }, 'Password reset email sent successfully');
+    } catch (error) {
+      logger.error({ err: error, userId: user._id, email: user.email }, 'Failed to send password reset email');
+      
+      // In development, return token if email fails
+      if (process.env.NODE_ENV === 'development') {
+        return {
+          success: true,
+          message: 'Email sending failed. Here is your reset token for testing',
+          resetToken,
+          resetLink: `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`,
+          error: 'Email service unavailable'
+        };
+      }
+      
+      throw new BadRequestError('Failed to send password reset email. Please try again later.');
     }
 
     return {
       success: true,
-      message: 'If the email exists, a password reset link will be sent'
+      message: 'If the email exists, a password reset link has been sent to your email'
     };
   }
 
