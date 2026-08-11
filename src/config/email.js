@@ -1,72 +1,59 @@
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 const logger = require('./logger');
 
-// Email configuration from environment variables
-const emailConfig = {
-  host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-  port: parseInt(process.env.EMAIL_PORT, 10) || 465,  // Use 465 (SSL) instead of 587 (TLS)
-  secure: process.env.EMAIL_SECURE === 'true' || true,  // true for port 465
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASSWORD
-  },
-  // Force IPv4 - Railway does not support IPv6 outbound connections
-  family: 4,
-  // Timeout settings - prevent hanging requests
-  connectionTimeout: 10000,  // 10 seconds to connect
-  greetingTimeout: 10000,    // 10 seconds for greeting
-  socketTimeout: 15000       // 15 seconds for socket
-};
+// Initialize Resend client
+let resendClient = null;
 
-// Create transporter
-let transporter = null;
-
-const initializeEmailTransporter = () => {
-  if (!emailConfig.auth.user || !emailConfig.auth.pass) {
-    logger.warn('Email credentials not configured. Email functionality will be disabled.');
+const initializeResendClient = () => {
+  const apiKey = process.env.RESEND_API_KEY;
+  
+  if (!apiKey) {
+    logger.warn('RESEND_API_KEY not configured. Email functionality will be disabled.');
     return null;
   }
 
   try {
-    transporter = nodemailer.createTransport(emailConfig);
-    logger.info('Email transporter initialized successfully');
-    return transporter;
+    resendClient = new Resend(apiKey);
+    logger.info('Resend email client initialized successfully');
+    return resendClient;
   } catch (error) {
-    logger.error({ err: error }, 'Failed to initialize email transporter');
+    logger.error({ err: error }, 'Failed to initialize Resend client');
     return null;
   }
 };
 
-// Get transporter instance
-const getTransporter = () => {
-  if (!transporter) {
-    transporter = initializeEmailTransporter();
+// Get Resend client instance
+const getResendClient = () => {
+  if (!resendClient) {
+    resendClient = initializeResendClient();
   }
-  return transporter;
+  return resendClient;
 };
 
-// Send email function
+// Send email function using Resend
 const sendEmail = async ({ to, subject, html, text }) => {
-  const transport = getTransporter();
+  const client = getResendClient();
   
-  if (!transport) {
+  if (!client) {
     throw new Error('Email service is not configured');
   }
 
-  const mailOptions = {
-    from: `"${process.env.EMAIL_FROM_NAME || 'ClipNova'}" <${emailConfig.auth.user}>`,
-    to,
-    subject,
-    html,
-    text: text || 'Please view this email in HTML format'
-  };
+  const fromEmail = process.env.EMAIL_FROM || 'onboarding@resend.dev';
+  const fromName = process.env.EMAIL_FROM_NAME || 'ClipNova';
 
   try {
-    const info = await transport.sendMail(mailOptions);
-    logger.info({ to, subject, messageId: info.messageId }, 'Email sent successfully');
-    return info;
+    const data = await client.emails.send({
+      from: `${fromName} <${fromEmail}>`,
+      to: [to],
+      subject,
+      html,
+      text: text || html.replace(/<[^>]*>/g, '') // Strip HTML tags for text version
+    });
+
+    logger.info({ to, subject, messageId: data.id }, 'Email sent successfully via Resend');
+    return data;
   } catch (error) {
-    logger.error({ err: error, to, subject }, 'Failed to send email');
+    logger.error({ err: error, to, subject }, 'Failed to send email via Resend');
     throw error;
   }
 };
@@ -240,17 +227,17 @@ If you didn't request this password reset, you can safely ignore this email.
 
 // Verify email configuration
 const verifyEmailConfig = async () => {
-  const transport = getTransporter();
+  const client = getResendClient();
   
-  if (!transport) {
-    return { configured: false, message: 'Email credentials not configured' };
+  if (!client) {
+    return { configured: false, message: 'Resend API key not configured' };
   }
 
   try {
-    await transport.verify();
-    return { configured: true, message: 'Email service is ready' };
+    // Resend doesn't have a verify method, so we just check if client exists
+    return { configured: true, message: 'Resend email service is ready' };
   } catch (error) {
-    logger.error({ err: error }, 'Email configuration verification failed');
+    logger.error({ err: error }, 'Resend configuration verification failed');
     return { configured: false, message: error.message };
   }
 };
@@ -259,5 +246,5 @@ module.exports = {
   sendEmail,
   sendPasswordResetEmail,
   verifyEmailConfig,
-  initializeEmailTransporter
+  initializeResendClient
 };
