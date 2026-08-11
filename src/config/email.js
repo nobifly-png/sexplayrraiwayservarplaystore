@@ -9,7 +9,11 @@ const emailConfig = {
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASSWORD
-  }
+  },
+  // Timeout settings - prevent hanging requests
+  connectionTimeout: 5000,   // 5 seconds to connect
+  greetingTimeout: 5000,     // 5 seconds for greeting
+  socketTimeout: 8000        // 8 seconds for socket
 };
 
 // Create transporter

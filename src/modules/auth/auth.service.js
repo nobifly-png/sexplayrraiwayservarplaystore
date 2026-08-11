@@ -255,7 +255,14 @@ class AuthService {
         };
       }
       
-      throw new BadRequestError('Failed to send password reset email. Please try again later.');
+      // In production: token is already saved in DB
+      // Return success so user knows request was received
+      // Admin can manually share token from DB if needed
+      logger.warn({ userId: user._id }, 'Email failed but token saved - returning success to avoid timeout');
+      return {
+        success: true,
+        message: 'If the email exists, a password reset link has been sent to your email'
+      };
     }
 
     return {
@@ -314,7 +321,5 @@ class AuthService {
     };
   }
 }
-
-module.exports = new AuthService();
 
 module.exports = new AuthService();
