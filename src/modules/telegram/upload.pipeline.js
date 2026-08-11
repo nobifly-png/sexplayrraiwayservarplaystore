@@ -15,7 +15,7 @@ const { generateThumbnailFromUrl, transcodeToCompatible } = require('./ffmpeg.se
 const logger = require('../../config/logger');
 const telegramConfig = require('../../config/telegram');
 
-const FRONTEND_URL = process.env.FRONTEND_URL || 'https://clipnovawebistefronendvarsel-gyum.vercel.app';
+const FRONTEND_URL = process.env.FRONTEND_URL || process.env.APP_URL || 'https://clipnovawebistefronendvarsel.vercel.app';
 
 /* ─── Telegram file URL ─────────────────────────────────────────────────── */
 const getTelegramFileUrl = (botToken, fileId) =>

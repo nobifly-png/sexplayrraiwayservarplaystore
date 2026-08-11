@@ -8,7 +8,7 @@ const Link = require('../links/link.model');
 const logger = require('../../config/logger');
 const telegramConfig = require('../../config/telegram');
 
-const FRONTEND_URL = process.env.FRONTEND_URL || 'https://clipnovawebistefronendvarsel-gyum.vercel.app';
+const FRONTEND_URL = process.env.FRONTEND_URL || process.env.APP_URL || 'https://clipnovawebistefronendvarsel.vercel.app';
 const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
 
 /* ─── Download Telegram photo to buffer ─────────────────────────────────── */
