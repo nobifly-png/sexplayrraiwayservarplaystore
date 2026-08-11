@@ -50,3 +50,6 @@ coverage/
 
 # PM2
 .pm2/
+
+# Railway environment files with secrets
+RAILWAY_ENV_*.txt
