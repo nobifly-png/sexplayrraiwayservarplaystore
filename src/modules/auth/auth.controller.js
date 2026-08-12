@@ -1,4 +1,5 @@
 const authService = require('./auth.service');
+const googleOAuthService = require('../../services/googleOAuth.service');
 const { successResponse } = require('../../common/helpers/response.helper');
 const { getClientIp } = require('../../common/utils/ip');
 const User = require('../users/user.model');
@@ -111,6 +112,48 @@ class AuthController {
       successResponse(res, result, result.message);
     } catch (error) {
       next(error);
+    }
+  }
+
+  async googleLogin(req, res, next) {
+    try {
+      // Redirect user to Google OAuth consent screen
+      const authUrl = googleOAuthService.getAuthorizationUrl();
+      res.redirect(authUrl);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async googleCallback(req, res, next) {
+    try {
+      const { code, error } = req.query;
+
+      // Handle OAuth errors
+      if (error) {
+        return res.redirect(`${process.env.FRONTEND_URL}/login?error=google_auth_failed`);
+      }
+
+      if (!code) {
+        return res.redirect(`${process.env.FRONTEND_URL}/login?error=missing_code`);
+      }
+
+      // Exchange code for user info and create session
+      const result = await authService.loginWithGoogle(
+        code,
+        getClientIp(req),
+        req.headers['user-agent']
+      );
+
+      // Redirect to frontend with tokens
+      const redirectUrl = `${process.env.FRONTEND_URL}/auth/google/callback?` +
+        `accessToken=${result.accessToken}&` +
+        `refreshToken=${result.refreshToken}`;
+
+      res.redirect(redirectUrl);
+    } catch (error) {
+      // Redirect to frontend with error
+      res.redirect(`${process.env.FRONTEND_URL}/login?error=google_auth_failed`);
     }
   }
 }

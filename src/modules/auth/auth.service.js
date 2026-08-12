@@ -13,6 +13,7 @@ const { isSuperAdminEmailAllowed } = require('../../config/superAdminPolicy');
 const auditService = require('../audit/audit.service');
 const logger = require('../../config/logger');
 const { sendPasswordResetEmail } = require('../../config/email');
+const googleOAuthService = require('../../services/googleOAuth.service');
 
 class AuthService {
   async register(data, ipAddress, userAgent) {
@@ -323,3 +324,82 @@ class AuthService {
 }
 
 module.exports = new AuthService();
+
+  /**
+   * Handle Google OAuth login
+   * @param {string} code - Authorization code from Google
+   * @param {string} ipAddress - User IP address
+   * @param {string} userAgent - User agent string
+   * @returns {Promise<{user: Object, accessToken: string, refreshToken: string}>}
+   */
+  async loginWithGoogle(code, ipAddress, userAgent) {
+    // Exchange code for user info
+    const googleUser = await googleOAuthService.authenticateUser(code);
+
+    if (!googleUser.verified_email) {
+      throw new BadRequestError('Google account email is not verified');
+    }
+
+    // Find or create user
+    let user = await User.findOne({ email: googleUser.email });
+
+    if (user) {
+      // Existing user - link Google account if not already linked
+      if (!user.googleId) {
+        user.googleId = googleUser.id;
+        user.profilePicture = googleUser.picture;
+        await user.save();
+        logger.info({ userId: user._id, email: user.email }, 'Linked Google account to existing user');
+      }
+
+      // Check if account is blocked
+      if (user.status === USER_STATUS.BLOCKED) {
+        throw new UnauthorizedError('Account is blocked');
+      }
+
+      // Update last login
+      user.lastLoginAt = new Date();
+      await user.save();
+    } else {
+      // New user - create account
+      user = await User.create({
+        name: googleUser.name,
+        email: googleUser.email,
+        googleId: googleUser.id,
+        profilePicture: googleUser.picture,
+        role: USER_ROLES.CREATOR_ADMIN,
+        status: USER_STATUS.ACTIVE
+        // No password needed for Google users
+      });
+
+      // Create wallet for new user
+      await Wallet.create({ creatorId: user._id });
+
+      logger.info({ userId: user._id, email: user.email }, 'Created new user via Google OAuth');
+    }
+
+    // Generate JWT tokens
+    const tokens = await this.createSession(user, ipAddress, userAgent);
+
+    // Log audit
+    auditService.logAction({
+      userId: user._id,
+      action: AUDIT_ACTION.USER_LOGIN,
+      entityType: AUDIT_ENTITY_TYPE.USER,
+      entityId: user._id,
+      ip: ipAddress,
+      userAgent,
+      metadata: { loginMethod: 'google' }
+    });
+
+    return {
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        profilePicture: user.profilePicture
+      },
+      ...tokens
+    };
+  }
