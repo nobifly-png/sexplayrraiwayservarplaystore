@@ -15,9 +15,10 @@ class GoogleOAuthService {
    * @returns {string} Authorization URL to redirect user
    */
   getAuthorizationUrl() {
+    const backendUrl = process.env.BACKEND_URL || process.env.APP_URL;
     const params = new URLSearchParams({
       client_id: process.env.GMAIL_CLIENT_ID,
-      redirect_uri: `${process.env.APP_URL}/api/auth/google/callback`,
+      redirect_uri: `${backendUrl}/api/auth/google/callback`,
       response_type: 'code',
       scope: 'profile email',
       access_type: 'online',
@@ -34,11 +35,12 @@ class GoogleOAuthService {
    */
   async exchangeCodeForToken(code) {
     try {
+      const backendUrl = process.env.BACKEND_URL || process.env.APP_URL;
       const response = await axios.post(GOOGLE_TOKEN_URL, {
         code,
         client_id: process.env.GMAIL_CLIENT_ID,
         client_secret: process.env.GMAIL_CLIENT_SECRET,
-        redirect_uri: `${process.env.APP_URL}/api/auth/google/callback`,
+        redirect_uri: `${backendUrl}/api/auth/google/callback`,
         grant_type: 'authorization_code'
       }, {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
