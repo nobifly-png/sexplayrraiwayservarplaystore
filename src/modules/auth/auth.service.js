@@ -321,9 +321,6 @@ class AuthService {
       message: 'Password reset successful. Please login with your new password.'
     };
   }
-}
-
-module.exports = new AuthService();
 
   /**
    * Handle Google OAuth login
@@ -403,3 +400,6 @@ module.exports = new AuthService();
       ...tokens
     };
   }
+}
+
+module.exports = new AuthService();
