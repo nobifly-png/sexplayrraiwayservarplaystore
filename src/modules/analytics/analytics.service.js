@@ -31,7 +31,7 @@ class AnalyticsService {
     const ledgerMatch = { creatorId: creatorObjectId, ...dateMatch };
 
     const [totalRealViews, validRealViews, rejectedRealViews, earningsResult] = await Promise.all([
-      PlaybackSession.countDocuments(sessionMatch),
+      ViewLedger.countDocuments(ledgerMatch), // Use ViewLedger for total (source of truth)
       ViewLedger.countDocuments({ ...ledgerMatch, viewType: VIEW_TYPE.VALID }),
       ViewLedger.countDocuments({ ...ledgerMatch, viewType: VIEW_TYPE.REJECTED }),
       ViewLedger.aggregate([
@@ -59,7 +59,7 @@ class AnalyticsService {
     const ledgerMatch = { videoId: videoObjectId, ...dateMatch };
 
     const [totalRealViews, validRealViews, rejectedRealViews, earningsResult] = await Promise.all([
-      PlaybackSession.countDocuments({ videoId: videoObjectId, ...dateMatch }),
+      ViewLedger.countDocuments(ledgerMatch), // Use ViewLedger for total (source of truth)
       ViewLedger.countDocuments({ ...ledgerMatch, viewType: VIEW_TYPE.VALID }),
       ViewLedger.countDocuments({ ...ledgerMatch, viewType: VIEW_TYPE.REJECTED }),
       ViewLedger.aggregate([
@@ -114,7 +114,7 @@ class AnalyticsService {
     if (!link) throw new NotFoundError('Link not found');
 
     const [totalRealViews, validRealViews, rejectedRealViews, earningsResult] = await Promise.all([
-      PlaybackSession.countDocuments({ linkId: linkObjectId }),
+      ViewLedger.countDocuments({ linkId: linkObjectId }), // Use ViewLedger for total (source of truth)
       ViewLedger.countDocuments({ linkId: linkObjectId, viewType: VIEW_TYPE.VALID }),
       ViewLedger.countDocuments({ linkId: linkObjectId, viewType: VIEW_TYPE.REJECTED }),
       ViewLedger.aggregate([
@@ -137,7 +137,7 @@ class AnalyticsService {
     const dateMatch = buildDateMatch(startDate, endDate);
 
     const [totalRealViews, validRealViews, rejectedRealViews, earningsResult, topCreatorsRaw] = await Promise.all([
-      PlaybackSession.countDocuments(dateMatch),
+      ViewLedger.countDocuments(dateMatch), // Use ViewLedger as source of truth
       ViewLedger.countDocuments({ ...dateMatch, viewType: VIEW_TYPE.VALID }),
       ViewLedger.countDocuments({ ...dateMatch, viewType: VIEW_TYPE.REJECTED }),
       ViewLedger.aggregate([
