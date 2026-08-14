@@ -24,6 +24,24 @@ const calculateCountedViews = (realViews) => {
   return Math.floor(realViews / VIEW_TO_COUNTED_RATIO);
 };
 
+/**
+ * Calculate display earnings based on complete views only
+ * Hides partial earnings until a complete view (4 sessions) is reached
+ * Examples: 
+ * - 2 sessions × $0.001 = $0.002 earned, but displays $0.000 (hidden)
+ * - 4 sessions × $0.001 = $0.004 earned, displays $0.004 (shown)
+ * - 6 sessions × $0.001 = $0.006 earned, but displays $0.004 (4 complete sessions only)
+ */
+const calculateDisplayEarnings = (realViews, totalEarnings) => {
+  const completeViews = Math.floor(realViews / VIEW_TO_COUNTED_RATIO);
+  if (completeViews === 0 || realViews === 0) {
+    return 0; // Hide earnings if no complete view
+  }
+  // Calculate earnings per session, then multiply by complete sessions
+  const earningsPerSession = realViews > 0 ? totalEarnings / realViews : 0;
+  return completeViews * VIEW_TO_COUNTED_RATIO * earningsPerSession;
+};
+
 class AnalyticsService {
   async getCreatorOverview(creatorId, { startDate, endDate } = {}) {
     const creatorObjectId = new mongoose.Types.ObjectId(creatorId);
@@ -42,12 +60,14 @@ class AnalyticsService {
       ])
     ]);
 
-    // Convert to counted views (4:1 ratio)
+    const totalEarnings = earningsResult[0]?.totalEarnings || 0;
+
+    // Convert to counted views (4:1 ratio) and calculate display earnings
     return {
       totalViews: calculateCountedViews(totalRealViews),
       validViews: calculateCountedViews(validRealViews),
       rejectedViews: calculateCountedViews(rejectedRealViews),
-      totalEarnings: earningsResult[0]?.totalEarnings || 0
+      totalEarnings: calculateDisplayEarnings(validRealViews, totalEarnings)
     };
   }
 
@@ -70,13 +90,15 @@ class AnalyticsService {
       ])
     ]);
 
-    // Convert to counted views (4:1 ratio)
+    const totalEarnings = earningsResult[0]?.totalEarnings || 0;
+
+    // Convert to counted views (4:1 ratio) and calculate display earnings
     return {
       video: { id: video._id, title: video.title, type: video.type },
       totalViews: calculateCountedViews(totalRealViews),
       validViews: calculateCountedViews(validRealViews),
       rejectedViews: calculateCountedViews(rejectedRealViews),
-      totalEarnings: earningsResult[0]?.totalEarnings || 0
+      totalEarnings: calculateDisplayEarnings(validRealViews, totalEarnings)
     };
   }
 
@@ -125,13 +147,15 @@ class AnalyticsService {
       ])
     ]);
 
-    // Convert to counted views (4:1 ratio)
+    const totalEarnings = earningsResult[0]?.totalEarnings || 0;
+
+    // Convert to counted views (4:1 ratio) and calculate display earnings
     return {
       link: { id: link._id, shortCode: link.shortCode, isActive: link.isActive },
       totalViews: calculateCountedViews(totalRealViews),
       validViews: calculateCountedViews(validRealViews),
       rejectedViews: calculateCountedViews(rejectedRealViews),
-      totalEarnings: earningsResult[0]?.totalEarnings || 0
+      totalEarnings: calculateDisplayEarnings(validRealViews, totalEarnings)
     };
   }
 
@@ -163,18 +187,21 @@ class AnalyticsService {
       ])
     ]);
 
-    // Convert top creators views to counted views
+    const totalEarnings = earningsResult[0]?.totalEarnings || 0;
+
+    // Convert top creators views to counted views and display earnings
     const topCreators = topCreatorsRaw.map(creator => ({
       ...creator,
-      validViews: calculateCountedViews(creator.validViews)
+      validViews: calculateCountedViews(creator.validViews),
+      earnings: calculateDisplayEarnings(creator.validViews, creator.earnings)
     }));
 
-    // Convert to counted views (4:1 ratio)
+    // Convert to counted views (4:1 ratio) and calculate display earnings
     return {
       totalViews: calculateCountedViews(totalRealViews),
       validViews: calculateCountedViews(validRealViews),
       rejectedViews: calculateCountedViews(rejectedRealViews),
-      totalEarnings: earningsResult[0]?.totalEarnings || 0,
+      totalEarnings: calculateDisplayEarnings(validRealViews, totalEarnings),
       topCreators
     };
   }
