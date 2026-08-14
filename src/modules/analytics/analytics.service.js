@@ -17,9 +17,11 @@ const buildDateMatch = (startDate, endDate) => {
 
 /**
  * Convert real views to counted views (4 real views = 1 counted view)
+ * Only shows complete views - partial views (0.25, 0.50, 0.75) are hidden
+ * Examples: 1 session = 0 views, 4 sessions = 1 view, 7 sessions = 1 view, 8 sessions = 2 views
  */
 const calculateCountedViews = (realViews) => {
-  return realViews / VIEW_TO_COUNTED_RATIO;
+  return Math.floor(realViews / VIEW_TO_COUNTED_RATIO);
 };
 
 class AnalyticsService {
