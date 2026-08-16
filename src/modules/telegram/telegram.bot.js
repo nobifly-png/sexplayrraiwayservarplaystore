@@ -302,12 +302,17 @@ class TelegramBotService {
     if (!session.userId) return ctx.reply('Please /login first.');
 
     const stats = await analyticsService.getCreatorOverview(session.userId);
+    
+    // Format earnings properly (hide partial earnings if no complete views)
+    const earningsDisplay = stats.totalEarnings === 0 ? '$0.000' : `$${stats.totalEarnings.toFixed(3)}`;
+    
     await ctx.reply(
       '📊 Your Analytics:\n\n' +
       `👁 Total Views: ${stats.totalViews}\n` +
       `✅ Valid Views: ${stats.validViews}\n` +
       `❌ Rejected: ${stats.rejectedViews}\n` +
-      `💰 Earnings: $${stats.totalEarnings.toFixed(2)}`
+      `💰 Earnings: ${earningsDisplay}\n\n` +
+      `💡 Note: 4 sessions = 1 counted view`
     );
   }
 
