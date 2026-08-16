@@ -309,10 +309,7 @@ class TelegramBotService {
     await ctx.reply(
       '📊 Your Analytics:\n\n' +
       `👁 Total Views: ${stats.totalViews}\n` +
-      `✅ Valid Views: ${stats.validViews}\n` +
-      `❌ Rejected: ${stats.rejectedViews}\n` +
-      `💰 Earnings: ${earningsDisplay}\n\n` +
-      `💡 Note: 4 sessions = 1 counted view`
+      `💰 Earnings: ${earningsDisplay}`
     );
   }
 
