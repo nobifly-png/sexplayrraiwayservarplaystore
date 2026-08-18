@@ -183,16 +183,16 @@ const _handleClipNovaLink = async (ctx, session, shortCode, pendingThumb) => {
   const ackMsg = await ctx.reply('⏳ Processing ClipNova link...');
 
   try {
-    const { video, shareUrl, wasAlreadyOwned } = await duplicateClipNovaVideo({
+    const { video, shareUrl, message, wasAlreadyOwned } = await duplicateClipNovaVideo({
       userId: session.userId,
       shortCode,
       pendingThumb
     });
 
     const thumbUrl = video.thumbnailUrl || process.env.DEFAULT_THUMBNAIL_URL || null;
-    const caption = wasAlreadyOwned
+    const caption = message || (wasAlreadyOwned
       ? `🔁 You already have this video!\n\n🎬 ${video.title}\n🔗 ${shareUrl}`
-      : `✅ Upload Complete\n\n🎬 ${video.title}\n🔗 ${shareUrl}`;
+      : `✅ Upload Complete\n\n🎬 ${video.title}\n🔗 ${shareUrl}`);
 
     await ctx.telegram.deleteMessage(chatId, ackMsg.message_id).catch(() => {});
     await safeSendPhoto(ctx, chatId, thumbUrl, caption);
@@ -235,13 +235,13 @@ const _handleVideoFile = (ctx, session, fileInfo) => {
       }
     }
 
-    const { video, shareUrl } = await uploadTelegramVideo({
+    const { video, shareUrl, message } = await uploadTelegramVideo({
       userId: session.userId,
       fileId, fileUniqueId, title, mimeType, fileSize,
       pendingThumb
     });
 
-    return { title: video.title, shareUrl, thumbnailUrl: video.thumbnailUrl || null };
+    return { title: video.title, shareUrl, message, thumbnailUrl: video.thumbnailUrl || null };
   });
 };
 

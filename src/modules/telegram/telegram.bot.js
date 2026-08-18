@@ -188,7 +188,6 @@ class TelegramBotService {
     bot.action('set_footer', (ctx) => this._safe(ctx, () => this._onSetFooter(ctx)));
     bot.action('toggle_header', (ctx) => this._safe(ctx, () => this._onToggleHeader(ctx)));
     bot.action('toggle_footer', (ctx) => this._safe(ctx, () => this._onToggleFooter(ctx)));
-    bot.action('preview_settings', (ctx) => this._safe(ctx, () => this._onPreviewSettings(ctx)));
 
     // Single entry point for ALL non-command messages
     bot.on('message', (ctx) => this._safe(ctx, () => this._onAnyMessage(ctx)));
@@ -376,9 +375,6 @@ class TelegramBotService {
       [
         Markup.button.callback('✏️ Set Header Text', 'set_header'),
         Markup.button.callback('✏️ Set Footer Text', 'set_footer')
-      ],
-      [
-        Markup.button.callback('👁 Preview', 'preview_settings')
       ]
     ]);
     
@@ -388,7 +384,7 @@ class TelegramBotService {
       `${user.telegramHeader || '(not set)'}\n\n` +
       `Current Footer: ${footerStatus}\n` +
       `${user.telegramFooter || '(not set)'}\n\n` +
-      '💡 Header/Footer will be added to all your video share links!';
+      '💡 Header/Footer will be automatically added to all your video uploads!';
     
     if (ctx.callbackQuery) {
       await ctx.editMessageText(message, keyboard);
@@ -444,28 +440,6 @@ class TelegramBotService {
     
     setSession(ctx.chat.id, { state: STATES.AWAIT_FOOTER });
     await ctx.reply('✏️ Enter footer text (e.g., backup channel link):\n\nSend /cancel to cancel.');
-  }
-
-  async _onPreviewSettings(ctx) {
-    await ctx.answerCbQuery();
-    const session = getSession(ctx.chat.id);
-    if (!session.userId) return;
-    
-    const user = await User.findById(session.userId);
-    
-    let preview = '👁 Preview:\n\n';
-    
-    if (user.headerEnabled && user.telegramHeader) {
-      preview += `${user.telegramHeader}\n\n`;
-    }
-    
-    preview += '🔗 https://clipnovawebistefronendvarsel.vercel.app/watch/example123';
-    
-    if (user.footerEnabled && user.telegramFooter) {
-      preview += `\n\n${user.telegramFooter}`;
-    }
-    
-    await ctx.reply(preview);
   }
 
   /* ─── All non-command messages ────────────────────────────────────────── */

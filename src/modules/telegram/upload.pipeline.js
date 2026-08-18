@@ -3,6 +3,7 @@ const http = require('http');
 const crypto = require('crypto');
 const Video = require('../videos/video.model');
 const Link = require('../links/link.model');
+const User = require('../users/user.model');
 const linkService = require('../links/link.service');
 const { VIDEO_TYPE, VIDEO_STATUS } = require('../../common/enums');
 const { isR2Configured } = require('../../config/r2');
@@ -16,6 +17,34 @@ const logger = require('../../config/logger');
 const telegramConfig = require('../../config/telegram');
 
 const FRONTEND_URL = process.env.FRONTEND_URL || process.env.APP_URL || 'https://clipnovawebistefronendvarsel.vercel.app';
+
+/* ─── Format message with header/footer ────────────────────────────────── */
+const formatMessageWithHeaderFooter = async (userId, shareUrl, videoTitle) => {
+  try {
+    const user = await User.findById(userId);
+    if (!user) return `✅ Upload Complete\n\n📹 ${videoTitle}\n🔗 ${shareUrl}`;
+    
+    let message = '✅ Upload Complete\n\n';
+    
+    // Add header if enabled
+    if (user.headerEnabled && user.telegramHeader) {
+      message += `${user.telegramHeader}\n\n`;
+    }
+    
+    // Video info and link
+    message += `📹 ${videoTitle}\n🔗 ${shareUrl}`;
+    
+    // Add footer if enabled
+    if (user.footerEnabled && user.telegramFooter) {
+      message += `\n\n${user.telegramFooter}`;
+    }
+    
+    return message;
+  } catch (err) {
+    logger.error({ err, userId }, 'Failed to format message with header/footer');
+    return `✅ Upload Complete\n\n📹 ${videoTitle}\n🔗 ${shareUrl}`;
+  }
+};
 
 /* ─── Telegram file URL ─────────────────────────────────────────────────── */
 const getTelegramFileUrl = (botToken, fileId) =>
@@ -142,8 +171,11 @@ const uploadTelegramVideo = async ({ userId, fileId, fileUniqueId, title, mimeTy
   // Re-fetch thumbnailUrl from DB in case async attachment updated it
   const finalVideo = await Video.findById(video._id).lean();
 
+  // Format message with header/footer
+  const formattedMessage = await formatMessageWithHeaderFooter(userId, shareUrl, finalVideo.title);
+
   logger.info({ videoId: video._id, shareUrl }, 'Pipeline: Telegram upload complete');
-  return { video: finalVideo, link, shareUrl };
+  return { video: finalVideo, link, shareUrl, message: formattedMessage };
 };
 
 /* ─── PIPELINE 2: ClipNova link duplication ────────────────────────────── */
@@ -162,8 +194,9 @@ const duplicateClipNovaVideo = async ({ userId, shortCode, pendingThumb }) => {
   if (existingDup) {
     const existingLink = await Link.findOne({ videoId: existingDup._id, isActive: true }).sort({ createdAt: -1 });
     const shareUrl = existingLink ? `${FRONTEND_URL}/watch/${existingLink.shortCode}` : null;
+    const formattedMessage = await formatMessageWithHeaderFooter(userId, shareUrl, existingDup.title);
     logger.info({ videoId: existingDup._id }, 'Pipeline: duplicate already exists');
-    return { video: existingDup, link: existingLink, shareUrl, wasAlreadyOwned: true };
+    return { video: existingDup, link: existingLink, shareUrl, message: formattedMessage, wasAlreadyOwned: true };
   }
 
   // R2 server-side copy
@@ -229,8 +262,11 @@ const duplicateClipNovaVideo = async ({ userId, shortCode, pendingThumb }) => {
   // Re-fetch to get latest thumbnailUrl
   const finalVideo = await Video.findById(newVideo._id).lean();
 
+  // Format message with header/footer
+  const formattedMessage = await formatMessageWithHeaderFooter(userId, shareUrl, finalVideo.title);
+
   logger.info({ newVideoId: newVideo._id, shareUrl }, 'Pipeline: duplication complete');
-  return { video: finalVideo, link, shareUrl, wasAlreadyOwned: false };
+  return { video: finalVideo, link, shareUrl, message: formattedMessage, wasAlreadyOwned: false };
 };
 
 module.exports = { uploadTelegramVideo, duplicateClipNovaVideo, attachThumbnail, getTelegramFileUrl };

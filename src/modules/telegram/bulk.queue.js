@@ -34,9 +34,9 @@ const sendVideoResult = async (ctx, chatId, result) => {
   await sleep(INTER_MSG_DELAY_MS);
   try {
     if (result.skipped) {
-      const msg = result.shareUrl
+      const msg = result.message || (result.shareUrl
         ? `✅ Already Imported\n\n🔗 Watch:\n${result.shareUrl}`
-        : `✅ Already Imported\n\nUse /videos to find your link.`;
+        : `✅ Already Imported\n\nUse /videos to find your link.`);
       const photoUrl = result.thumbnailUrl || DEFAULT_THUMBNAIL_URL;
       if (photoUrl && result.shareUrl) {
         await ctx.telegram.sendPhoto(chatId, photoUrl, { caption: msg }).catch(() =>
@@ -46,10 +46,11 @@ const sendVideoResult = async (ctx, chatId, result) => {
         await ctx.telegram.sendMessage(chatId, msg).catch(() => {});
       }
     } else if (result.success !== false) {
-      const caption =
+      const caption = result.message || (
         `✅ Upload Complete\n\n` +
         `🎬 ${result.title}\n` +
-        `🔗 ${result.shareUrl}`;
+        `🔗 ${result.shareUrl}`
+      );
       const photoUrl = result.thumbnailUrl || DEFAULT_THUMBNAIL_URL;
       if (photoUrl) {
         await ctx.telegram.sendPhoto(chatId, photoUrl, { caption }).catch(() =>
