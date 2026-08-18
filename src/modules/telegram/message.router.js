@@ -11,15 +11,22 @@ const telegramConfig = require('../../config/telegram');
 const FRONTEND_URL = process.env.FRONTEND_URL || process.env.APP_URL || 'https://clipnovawebistefronendvarsel.vercel.app';
 const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
 
+// Use Local Bot API base URL if configured, otherwise standard API
+const getTelegramApiBase = () =>
+  (telegramConfig.useLocalApi && telegramConfig.localApiUrl)
+    ? telegramConfig.localApiUrl
+    : 'https://api.telegram.org';
+
 /* ─── Download Telegram photo to buffer ─────────────────────────────────── */
 const downloadTelegramPhoto = async (photoArray) => {
   try {
     const https = require('https');
     const photo = photoArray[photoArray.length - 1]; // highest resolution
     const botToken = telegramConfig.botToken;
+    const apiBase = getTelegramApiBase();
 
     const fileInfo = await new Promise((resolve, reject) => {
-      https.get(`https://api.telegram.org/bot${botToken}/getFile?file_id=${photo.file_id}`, (res) => {
+      https.get(`${apiBase}/bot${botToken}/getFile?file_id=${photo.file_id}`, (res) => {
         let d = '';
         res.on('data', (c) => { d += c; });
         res.on('end', () => {
@@ -33,7 +40,7 @@ const downloadTelegramPhoto = async (photoArray) => {
       }).on('error', reject);
     });
 
-    const downloadUrl = `https://api.telegram.org/file/bot${botToken}/${fileInfo.file_path}`;
+    const downloadUrl = `${apiBase}/file/bot${botToken}/${fileInfo.file_path}`;
 
     const buffer = await new Promise((resolve, reject) => {
       https.get(downloadUrl, (res) => {

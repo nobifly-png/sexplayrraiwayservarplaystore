@@ -49,7 +49,14 @@ const formatMessageWithHeaderFooter = async (userId, shareUrl, videoTitle) => {
 /* ─── Telegram file URL ─────────────────────────────────────────────────── */
 const getTelegramFileUrl = (botToken, fileId) =>
   new Promise((resolve, reject) => {
-    const url = `https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`;
+    // Use Local Bot API if configured, otherwise fall back to standard API
+    const apiBase = (telegramConfig.useLocalApi && telegramConfig.localApiUrl)
+      ? telegramConfig.localApiUrl
+      : 'https://api.telegram.org';
+
+    const url = `${apiBase}/bot${botToken}/getFile?file_id=${fileId}`;
+    logger.info({ apiBase, useLocalApi: telegramConfig.useLocalApi }, 'Pipeline: fetching file info from Telegram API');
+
     https.get(url, { timeout: 15000 }, (res) => {
       let data = '';
       res.on('data', (c) => { data += c; });
@@ -59,7 +66,7 @@ const getTelegramFileUrl = (botToken, fileId) =>
           if (!parsed.ok || !parsed.result?.file_path)
             return reject(new Error(parsed.description || 'Telegram getFile failed'));
           resolve({
-            downloadUrl: `https://api.telegram.org/file/bot${botToken}/${parsed.result.file_path}`,
+            downloadUrl: `${apiBase}/file/bot${botToken}/${parsed.result.file_path}`,
             filePath: parsed.result.file_path,
             fileSize: parsed.result.file_size || 0
           });

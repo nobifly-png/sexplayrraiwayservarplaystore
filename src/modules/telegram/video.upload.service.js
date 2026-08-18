@@ -5,15 +5,20 @@ const { r2Client, bucketName, isR2Configured } = require('../../config/r2');
 const { generateStorageKey } = require('../../common/utils');
 const logger = require('../../config/logger');
 const crypto = require('crypto');
+const telegramConfig = require('../../config/telegram');
 
 /**
  * Get Telegram file download URL via Bot API.
- * Works for files up to 20MB via standard Bot API.
- * For larger files, Telegram requires local Bot API server.
+ * Uses Local Bot API if configured (supports files up to 2GB).
+ * Falls back to standard Bot API (20MB limit) if local API not configured.
  */
 const getTelegramFileUrl = async (botToken, fileId) => {
+  const apiBase = (telegramConfig.useLocalApi && telegramConfig.localApiUrl)
+    ? telegramConfig.localApiUrl
+    : 'https://api.telegram.org';
+
   return new Promise((resolve, reject) => {
-    const url = `https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`;
+    const url = `${apiBase}/bot${botToken}/getFile?file_id=${fileId}`;
     https.get(url, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
@@ -23,7 +28,7 @@ const getTelegramFileUrl = async (botToken, fileId) => {
           if (!parsed.ok || !parsed.result?.file_path) {
             return reject(new Error(parsed.description || 'Could not get file path from Telegram'));
           }
-          const downloadUrl = `https://api.telegram.org/file/bot${botToken}/${parsed.result.file_path}`;
+          const downloadUrl = `${apiBase}/file/bot${botToken}/${parsed.result.file_path}`;
           resolve({ downloadUrl, filePath: parsed.result.file_path, fileSize: parsed.result.file_size });
         } catch (e) {
           reject(new Error('Failed to parse Telegram getFile response'));
