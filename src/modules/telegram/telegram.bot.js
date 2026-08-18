@@ -6,6 +6,7 @@ const authService = require('../auth/auth.service');
 const videoService = require('../videos/video.service');
 const linkService = require('../links/link.service');
 const ingestService = require('./ingest.service');
+const User = require('../users/user.model');
 
 const { routeMessage } = require('./message.router');
 const { detectVideoLink } = require('./link.parser');
@@ -41,7 +42,9 @@ const clearSession = (chatId) => sessions.delete(String(chatId));
 const STATES = {
   IDLE: 'IDLE',
   AWAIT_EMAIL: 'AWAIT_EMAIL',
-  AWAIT_PASSWORD: 'AWAIT_PASSWORD'
+  AWAIT_PASSWORD: 'AWAIT_PASSWORD',
+  AWAIT_HEADER: 'AWAIT_HEADER',
+  AWAIT_FOOTER: 'AWAIT_FOOTER'
 };
 
 /* ─── Bot Service ───────────────────────────────────────────────────────── */
@@ -135,6 +138,7 @@ class TelegramBotService {
       // Set menu commands that appear in bot menu (hamburger icon)
       await this.bot.telegram.setMyCommands([
         { command: 'login', description: '🔑 Login to your account' },
+        { command: 'settings', description: '⚙️ Header & Footer settings' },
         { command: 'help', description: 'ℹ️ Show help and commands' },
         { command: 'videos', description: '📹 List your videos' },
         { command: 'imports', description: '📥 Recent import jobs' },
@@ -172,10 +176,19 @@ class TelegramBotService {
     bot.command('help', (ctx) => this._safe(ctx, () => this._onHelp(ctx)));
     bot.command('login', (ctx) => this._safe(ctx, () => this._onLoginCmd(ctx)));
     bot.command('logout', (ctx) => this._safe(ctx, () => this._onLogout(ctx)));
+    bot.command('settings', (ctx) => this._safe(ctx, () => this._onSettings(ctx)));
     bot.command('videos', (ctx) => this._safe(ctx, () => this._onVideos(ctx)));
     bot.command('imports', (ctx) => this._safe(ctx, () => this._onImports(ctx)));
     bot.command('link', (ctx) => this._safe(ctx, () => this._onLink(ctx)));
     bot.command('cancel', (ctx) => this._safe(ctx, () => this._onCancel(ctx)));
+
+    // Inline button callbacks for settings
+    bot.action('settings_menu', (ctx) => this._safe(ctx, () => this._onSettingsMenu(ctx)));
+    bot.action('set_header', (ctx) => this._safe(ctx, () => this._onSetHeader(ctx)));
+    bot.action('set_footer', (ctx) => this._safe(ctx, () => this._onSetFooter(ctx)));
+    bot.action('toggle_header', (ctx) => this._safe(ctx, () => this._onToggleHeader(ctx)));
+    bot.action('toggle_footer', (ctx) => this._safe(ctx, () => this._onToggleFooter(ctx)));
+    bot.action('preview_settings', (ctx) => this._safe(ctx, () => this._onPreviewSettings(ctx)));
 
     // Single entry point for ALL non-command messages
     bot.on('message', (ctx) => this._safe(ctx, () => this._onAnyMessage(ctx)));
@@ -312,10 +325,147 @@ class TelegramBotService {
     try {
       const link = await linkService.createLink(session.userId, videoId);
       const shareUrl = `${FRONTEND_URL}/watch/${link.shortCode}`;
-      await ctx.reply(`✅ Share Link Created!\n\n🔗 ${shareUrl}`);
+      
+      // Get user settings for header/footer
+      const user = await User.findById(session.userId);
+      let message = '✅ Share Link Created!\n\n';
+      
+      if (user.headerEnabled && user.telegramHeader) {
+        message += `${user.telegramHeader}\n\n`;
+      }
+      
+      message += `🔗 ${shareUrl}`;
+      
+      if (user.footerEnabled && user.telegramFooter) {
+        message += `\n\n${user.telegramFooter}`;
+      }
+      
+      await ctx.reply(message);
     } catch (err) {
       await ctx.reply(`❌ ${err.message}`);
     }
+  }
+
+  /* ─── /settings ────────────────────────────────────────────────────────── */
+  async _onSettings(ctx) {
+    const session = getSession(ctx.chat.id);
+    if (!session.userId) return ctx.reply('Please /login first.');
+
+    await this._showSettingsMenu(ctx, session.userId);
+  }
+
+  async _showSettingsMenu(ctx, userId) {
+    const user = await User.findById(userId);
+    
+    const headerStatus = user.headerEnabled ? '✅ Enabled' : '❌ Disabled';
+    const footerStatus = user.footerEnabled ? '✅ Enabled' : '❌ Disabled';
+    
+    const keyboard = Markup.inlineKeyboard([
+      [
+        Markup.button.callback(
+          `📄 Header: ${headerStatus}`, 
+          'toggle_header'
+        )
+      ],
+      [
+        Markup.button.callback(
+          `📝 Footer: ${footerStatus}`, 
+          'toggle_footer'
+        )
+      ],
+      [
+        Markup.button.callback('✏️ Set Header Text', 'set_header'),
+        Markup.button.callback('✏️ Set Footer Text', 'set_footer')
+      ],
+      [
+        Markup.button.callback('👁 Preview', 'preview_settings')
+      ]
+    ]);
+    
+    const message = 
+      '⚙️ Header & Footer Settings\n\n' +
+      `Current Header: ${headerStatus}\n` +
+      `${user.telegramHeader || '(not set)'}\n\n` +
+      `Current Footer: ${footerStatus}\n` +
+      `${user.telegramFooter || '(not set)'}\n\n` +
+      '💡 Header/Footer will be added to all your video share links!';
+    
+    if (ctx.callbackQuery) {
+      await ctx.editMessageText(message, keyboard);
+    } else {
+      await ctx.reply(message, keyboard);
+    }
+  }
+
+  async _onSettingsMenu(ctx) {
+    await ctx.answerCbQuery();
+    const session = getSession(ctx.chat.id);
+    if (!session.userId) return;
+    await this._showSettingsMenu(ctx, session.userId);
+  }
+
+  async _onToggleHeader(ctx) {
+    await ctx.answerCbQuery();
+    const session = getSession(ctx.chat.id);
+    if (!session.userId) return;
+    
+    const user = await User.findById(session.userId);
+    user.headerEnabled = !user.headerEnabled;
+    await user.save();
+    
+    await this._showSettingsMenu(ctx, session.userId);
+  }
+
+  async _onToggleFooter(ctx) {
+    await ctx.answerCbQuery();
+    const session = getSession(ctx.chat.id);
+    if (!session.userId) return;
+    
+    const user = await User.findById(session.userId);
+    user.footerEnabled = !user.footerEnabled;
+    await user.save();
+    
+    await this._showSettingsMenu(ctx, session.userId);
+  }
+
+  async _onSetHeader(ctx) {
+    await ctx.answerCbQuery('Enter header text...');
+    const session = getSession(ctx.chat.id);
+    if (!session.userId) return;
+    
+    setSession(ctx.chat.id, { state: STATES.AWAIT_HEADER });
+    await ctx.reply('✏️ Enter header text (e.g., channel name, backup link):\n\nSend /cancel to cancel.');
+  }
+
+  async _onSetFooter(ctx) {
+    await ctx.answerCbQuery('Enter footer text...');
+    const session = getSession(ctx.chat.id);
+    if (!session.userId) return;
+    
+    setSession(ctx.chat.id, { state: STATES.AWAIT_FOOTER });
+    await ctx.reply('✏️ Enter footer text (e.g., backup channel link):\n\nSend /cancel to cancel.');
+  }
+
+  async _onPreviewSettings(ctx) {
+    await ctx.answerCbQuery();
+    const session = getSession(ctx.chat.id);
+    if (!session.userId) return;
+    
+    const user = await User.findById(session.userId);
+    
+    let preview = '👁 Preview:\n\n';
+    
+    if (user.headerEnabled && user.telegramHeader) {
+      preview += `${user.telegramHeader}\n\n`;
+    }
+    
+    preview += '🔗 https://clipnovawebistefronendvarsel.vercel.app/watch/example123';
+    
+    if (user.footerEnabled && user.telegramFooter) {
+      preview += `\n\n${user.telegramFooter}`;
+    }
+    
+    await ctx.reply(preview);
   }
 
   /* ─── All non-command messages ────────────────────────────────────────── */
@@ -327,7 +477,7 @@ class TelegramBotService {
     const session = getSession(chatId);
     const text = (msg.text || msg.caption || '').trim();
 
-    // State machine — login flow only
+    // State machine — login flow and settings
     if (session.state === STATES.AWAIT_EMAIL) {
       if (!text) return ctx.reply('Please enter your email:');
       setSession(chatId, { email: text, state: STATES.AWAIT_PASSWORD });
@@ -336,6 +486,24 @@ class TelegramBotService {
     if (session.state === STATES.AWAIT_PASSWORD) {
       if (!text) return ctx.reply('Please enter your password:');
       return this._processLogin(ctx, chatId, session.email, text);
+    }
+    if (session.state === STATES.AWAIT_HEADER) {
+      if (!text) return ctx.reply('Please enter header text:');
+      const user = await User.findById(session.userId);
+      user.telegramHeader = text;
+      await user.save();
+      setSession(chatId, { state: STATES.IDLE });
+      await ctx.reply('✅ Header updated!');
+      return this._showSettingsMenu(ctx, session.userId);
+    }
+    if (session.state === STATES.AWAIT_FOOTER) {
+      if (!text) return ctx.reply('Please enter footer text:');
+      const user = await User.findById(session.userId);
+      user.telegramFooter = text;
+      await user.save();
+      setSession(chatId, { state: STATES.IDLE });
+      await ctx.reply('✅ Footer updated!');
+      return this._showSettingsMenu(ctx, session.userId);
     }
 
     // Delegate to routeMessage — handles all media + links with correct priority

@@ -41,6 +41,25 @@ const userSchema = new mongoose.Schema({
   },
   lastLoginAt: {
     type: Date
+  },
+  // Telegram Bot Settings
+  telegramHeader: {
+    type: String,
+    default: '',
+    maxlength: 500
+  },
+  telegramFooter: {
+    type: String,
+    default: '',
+    maxlength: 500
+  },
+  headerEnabled: {
+    type: Boolean,
+    default: false
+  },
+  footerEnabled: {
+    type: Boolean,
+    default: false
   }
 }, {
   timestamps: true
