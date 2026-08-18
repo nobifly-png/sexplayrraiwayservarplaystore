@@ -158,6 +158,13 @@ class TelegramBotService {
     bot.command('link', (ctx) => this._safe(ctx, () => this._onLink(ctx)));
     bot.command('cancel', (ctx) => this._safe(ctx, () => this._onCancel(ctx)));
 
+    // Inline button callbacks
+    bot.action('btn_login', (ctx) => this._safe(ctx, () => this._onButtonLogin(ctx)));
+    bot.action('btn_help', (ctx) => this._safe(ctx, () => this._onButtonHelp(ctx)));
+    bot.action('btn_logout', (ctx) => this._safe(ctx, () => this._onButtonLogout(ctx)));
+    bot.action('btn_videos', (ctx) => this._safe(ctx, () => this._onButtonVideos(ctx)));
+    bot.action('btn_menu', (ctx) => this._safe(ctx, () => this._onButtonMenu(ctx)));
+
     // Single entry point for ALL non-command messages
     bot.on('message', (ctx) => this._safe(ctx, () => this._onAnyMessage(ctx)));
   }
@@ -174,16 +181,28 @@ class TelegramBotService {
   /* ─── /start ──────────────────────────────────────────────────────────── */
   async _onStart(ctx) {
     clearSession(ctx.chat.id);
+    
+    // Inline keyboard buttons
+    const keyboard = Markup.inlineKeyboard([
+      [
+        Markup.button.callback('🔑 Login', 'btn_login'),
+        Markup.button.callback('ℹ️ Help', 'btn_help')
+      ],
+      [
+        Markup.button.url('🌐 Visit Website', FRONTEND_URL)
+      ]
+    ]);
+    
     await ctx.reply(
       '👋 Welcome to Zexgram Bot!\n\n' +
       'Monetize your videos and track earnings.\n\n' +
       '📌 Quick Start:\n' +
-      '1. Use /login to connect your account\n' +
+      '1. Login to connect your account\n' +
       '2. Forward any video directly to this bot\n' +
       '3. Bot uploads to R2 and gives you a share link\n' +
       '4. Share the link — earn on every view!\n\n' +
-      '💡 Tip: Send a photo BEFORE a video to set a custom thumbnail!\n\n' +
-      'Use /help to see all commands.'
+      '💡 Tip: Send a photo BEFORE a video to set a custom thumbnail!',
+      keyboard
     );
   }
 
@@ -345,14 +364,18 @@ class TelegramBotService {
     ).catch((err) => ({ error: err.message }));
 
     if (result.error) {
-      return ctx.reply(`❌ Login failed: ${result.error}\n\nUse /login to try again.`);
+      return ctx.reply(
+        `❌ Login failed: ${result.error}\n\nUse /login or click button below to try again.`,
+        this._getLoggedOutKeyboard()
+      );
     }
 
     setSession(chatId, { userId: result.user.id.toString() });
     await ctx.reply(
       `✅ Logged in as ${result.user.name}!\n\n` +
       "Now forward any video — I'll upload it to R2 and give you a share link automatically!\n\n" +
-      '💡 Tip: Send a photo first to set a custom thumbnail.'
+      '💡 Tip: Send a photo first to set a custom thumbnail.',
+      this._getLoggedInKeyboard()
     );
   }
 
