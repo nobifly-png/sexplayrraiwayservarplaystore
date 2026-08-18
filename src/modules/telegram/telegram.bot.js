@@ -142,6 +142,7 @@ class TelegramBotService {
         { command: 'help', description: 'ℹ️ Show help and commands' },
         { command: 'videos', description: '📹 List your videos' },
         { command: 'imports', description: '📥 Recent import jobs' },
+        { command: 'contact', description: '📞 Contact Us' },
         { command: 'logout', description: '🚪 Logout from account' }
       ]);
       logger.info('Bot menu commands set successfully');
@@ -177,6 +178,7 @@ class TelegramBotService {
     bot.command('login', (ctx) => this._safe(ctx, () => this._onLoginCmd(ctx)));
     bot.command('logout', (ctx) => this._safe(ctx, () => this._onLogout(ctx)));
     bot.command('settings', (ctx) => this._safe(ctx, () => this._onSettings(ctx)));
+    bot.command('contact', (ctx) => this._safe(ctx, () => this._onContact(ctx)));
     bot.command('videos', (ctx) => this._safe(ctx, () => this._onVideos(ctx)));
     bot.command('imports', (ctx) => this._safe(ctx, () => this._onImports(ctx)));
     bot.command('link', (ctx) => this._safe(ctx, () => this._onLink(ctx)));
@@ -351,6 +353,30 @@ class TelegramBotService {
     if (!session.userId) return ctx.reply('Please /login first.');
 
     await this._showSettingsMenu(ctx, session.userId);
+  }
+
+  /* ─── /contact ─────────────────────────────────────────────────────────── */
+  async _onContact(ctx) {
+    const keyboard = Markup.inlineKeyboard([
+      [
+        Markup.button.url('📢 New Updates', 'https://t.me/+bjnJaxlgdvxkM2Vl')
+      ],
+      [
+        Markup.button.url('💬 Telegram Support', 'https://t.me/zexgram_support')
+      ],
+      [
+        Markup.button.url('🌐 Visit Website', FRONTEND_URL)
+      ]
+    ]);
+
+    await ctx.reply(
+      '📞 Contact Us\n\n' +
+      '📢 New Updates: https://t.me/+bjnJaxlgdvxkM2Vl\n' +
+      '💬 Telegram Support: t.me/zexgram_support\n' +
+      '🌐 Website: ' + FRONTEND_URL + '\n\n' +
+      'Click buttons below to visit:',
+      keyboard
+    );
   }
 
   async _showSettingsMenu(ctx, userId) {
