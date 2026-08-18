@@ -17,29 +17,48 @@ const getTelegramApiBase = () =>
     ? telegramConfig.localApiUrl
     : 'https://api.telegram.org';
 
+/* ─── Get Telegram file info with fallback ──────────────────────────────── */
+const _getPhotoFileInfo = async (botToken, fileId) => {
+  const https = require('https');
+  const useLocal = telegramConfig.useLocalApi && telegramConfig.localApiUrl;
+  const apiBase = useLocal ? telegramConfig.localApiUrl : 'https://api.telegram.org';
+
+  const tryFetch = (base) => new Promise((resolve, reject) => {
+    const req = https.get(`${base}/bot${botToken}/getFile?file_id=${fileId}`, { timeout: 15000 }, (res) => {
+      let d = '';
+      res.on('data', (c) => { d += c; });
+      res.on('end', () => {
+        try {
+          const p = JSON.parse(d);
+          if (!p.ok) return reject(new Error('getFile failed'));
+          resolve({ result: p.result, apiBase: base });
+        } catch { reject(new Error('parse error')); }
+      });
+      res.on('error', reject);
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+  });
+
+  try {
+    return await tryFetch(apiBase);
+  } catch (err) {
+    if (useLocal) {
+      logger.warn({ err: err.message }, 'MessageRouter: Local API photo fetch failed — falling back to standard API');
+      return tryFetch('https://api.telegram.org');
+    }
+    throw err;
+  }
+};
+
 /* ─── Download Telegram photo to buffer ─────────────────────────────────── */
 const downloadTelegramPhoto = async (photoArray) => {
   try {
     const https = require('https');
     const photo = photoArray[photoArray.length - 1]; // highest resolution
     const botToken = telegramConfig.botToken;
-    const apiBase = getTelegramApiBase();
 
-    const fileInfo = await new Promise((resolve, reject) => {
-      https.get(`${apiBase}/bot${botToken}/getFile?file_id=${photo.file_id}`, (res) => {
-        let d = '';
-        res.on('data', (c) => { d += c; });
-        res.on('end', () => {
-          try {
-            const p = JSON.parse(d);
-            if (!p.ok) return reject(new Error('getFile failed'));
-            resolve(p.result);
-          } catch { reject(new Error('parse error')); }
-        });
-        res.on('error', reject);
-      }).on('error', reject);
-    });
-
+    const { result: fileInfo, apiBase } = await _getPhotoFileInfo(botToken, photo.file_id);
     const downloadUrl = `${apiBase}/file/bot${botToken}/${fileInfo.file_path}`;
 
     const buffer = await new Promise((resolve, reject) => {

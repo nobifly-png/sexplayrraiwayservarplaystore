@@ -10,16 +10,15 @@ const telegramConfig = require('../../config/telegram');
 /**
  * Get Telegram file download URL via Bot API.
  * Uses Local Bot API if configured (supports files up to 2GB).
- * Falls back to standard Bot API (20MB limit) if local API not configured.
+ * Falls back to standard Bot API (20MB limit) if local API fails or not configured.
  */
 const getTelegramFileUrl = async (botToken, fileId) => {
-  const apiBase = (telegramConfig.useLocalApi && telegramConfig.localApiUrl)
-    ? telegramConfig.localApiUrl
-    : 'https://api.telegram.org';
+  const useLocal = telegramConfig.useLocalApi && telegramConfig.localApiUrl;
+  const apiBase = useLocal ? telegramConfig.localApiUrl : 'https://api.telegram.org';
 
-  return new Promise((resolve, reject) => {
-    const url = `${apiBase}/bot${botToken}/getFile?file_id=${fileId}`;
-    https.get(url, (res) => {
+  const tryFetch = (base) => new Promise((resolve, reject) => {
+    const url = `${base}/bot${botToken}/getFile?file_id=${fileId}`;
+    const req = https.get(url, { timeout: 20000 }, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
       res.on('end', () => {
@@ -28,15 +27,27 @@ const getTelegramFileUrl = async (botToken, fileId) => {
           if (!parsed.ok || !parsed.result?.file_path) {
             return reject(new Error(parsed.description || 'Could not get file path from Telegram'));
           }
-          const downloadUrl = `${apiBase}/file/bot${botToken}/${parsed.result.file_path}`;
+          const downloadUrl = `${base}/file/bot${botToken}/${parsed.result.file_path}`;
           resolve({ downloadUrl, filePath: parsed.result.file_path, fileSize: parsed.result.file_size });
         } catch (e) {
           reject(new Error('Failed to parse Telegram getFile response'));
         }
       });
       res.on('error', reject);
-    }).on('error', reject);
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
   });
+
+  try {
+    return await tryFetch(apiBase);
+  } catch (err) {
+    if (useLocal) {
+      logger.warn({ err: err.message }, 'VideoUploadService: Local API failed — falling back to standard API');
+      return tryFetch('https://api.telegram.org');
+    }
+    throw err;
+  }
 };
 
 /**

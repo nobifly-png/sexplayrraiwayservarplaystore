@@ -50,14 +50,66 @@ const formatMessageWithHeaderFooter = async (userId, shareUrl, videoTitle) => {
 const getTelegramFileUrl = (botToken, fileId) =>
   new Promise((resolve, reject) => {
     // Use Local Bot API if configured, otherwise fall back to standard API
-    const apiBase = (telegramConfig.useLocalApi && telegramConfig.localApiUrl)
-      ? telegramConfig.localApiUrl
-      : 'https://api.telegram.org';
+    const useLocal = telegramConfig.useLocalApi && telegramConfig.localApiUrl;
+    const apiBase = useLocal ? telegramConfig.localApiUrl : 'https://api.telegram.org';
 
     const url = `${apiBase}/bot${botToken}/getFile?file_id=${fileId}`;
-    logger.info({ apiBase, useLocalApi: telegramConfig.useLocalApi }, 'Pipeline: fetching file info from Telegram API');
+    logger.info({ apiBase, useLocalApi: !!useLocal }, 'Pipeline: fetching file info from Telegram API');
 
-    https.get(url, { timeout: 15000 }, (res) => {
+    const req = https.get(url, { timeout: 30000 }, (res) => {
+      let data = '';
+      res.on('data', (c) => { data += c; });
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          if (!parsed.ok || !parsed.result?.file_path) {
+            // If local API failed, try standard API as fallback
+            if (useLocal) {
+              logger.warn({ err: parsed.description }, 'Pipeline: Local Bot API getFile failed — falling back to standard API');
+              return _getFileFromStandardApi(botToken, fileId).then(resolve).catch(reject);
+            }
+            return reject(new Error(parsed.description || 'Telegram getFile failed'));
+          }
+          resolve({
+            downloadUrl: `${apiBase}/file/bot${botToken}/${parsed.result.file_path}`,
+            filePath: parsed.result.file_path,
+            fileSize: parsed.result.file_size || 0
+          });
+        } catch { reject(new Error('Failed to parse Telegram getFile response')); }
+      });
+      res.on('error', (err) => {
+        if (useLocal) {
+          logger.warn({ err: err.message }, 'Pipeline: Local Bot API connection error — falling back to standard API');
+          return _getFileFromStandardApi(botToken, fileId).then(resolve).catch(reject);
+        }
+        reject(err);
+      });
+    });
+
+    req.on('error', (err) => {
+      if (useLocal) {
+        logger.warn({ err: err.message }, 'Pipeline: Local Bot API request error — falling back to standard API');
+        return _getFileFromStandardApi(botToken, fileId).then(resolve).catch(reject);
+      }
+      reject(err);
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      if (useLocal) {
+        logger.warn('Pipeline: Local Bot API timed out — falling back to standard API');
+        return _getFileFromStandardApi(botToken, fileId).then(resolve).catch(reject);
+      }
+      reject(new Error('Telegram getFile timed out'));
+    });
+  });
+
+/* ─── Fallback: standard Telegram API (20MB limit) ─────────────────────── */
+const _getFileFromStandardApi = (botToken, fileId) =>
+  new Promise((resolve, reject) => {
+    const url = `https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`;
+    logger.info('Pipeline: using standard Telegram API (20MB limit applies)');
+    const req = https.get(url, { timeout: 15000 }, (res) => {
       let data = '';
       res.on('data', (c) => { data += c; });
       res.on('end', () => {
@@ -66,14 +118,16 @@ const getTelegramFileUrl = (botToken, fileId) =>
           if (!parsed.ok || !parsed.result?.file_path)
             return reject(new Error(parsed.description || 'Telegram getFile failed'));
           resolve({
-            downloadUrl: `${apiBase}/file/bot${botToken}/${parsed.result.file_path}`,
+            downloadUrl: `https://api.telegram.org/file/bot${botToken}/${parsed.result.file_path}`,
             filePath: parsed.result.file_path,
             fileSize: parsed.result.file_size || 0
           });
         } catch { reject(new Error('Failed to parse Telegram getFile response')); }
       });
       res.on('error', reject);
-    }).on('error', reject).on('timeout', () => reject(new Error('Telegram getFile timed out')));
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Telegram getFile timed out')); });
   });
 
 /* ─── Attach thumbnail (never throws) ──────────────────────────────────── */
