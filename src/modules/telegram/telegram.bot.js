@@ -108,6 +108,9 @@ class TelegramBotService {
 
       this._registerHandlers();
 
+      // Set bot menu commands (persistent menu buttons)
+      await this._setBotMenuCommands();
+
       this.bot.launch({ dropPendingUpdates: true }).catch((err) => {
         logger.error({ errMsg: err.message }, 'Telegram bot polling died — scheduling reconnect');
         this._launched = false;
@@ -124,6 +127,22 @@ class TelegramBotService {
       this._launched = false;
       logger.error({ errMsg: err.message, stack: err.stack }, 'Telegram bot failed to initialize — scheduling reconnect');
       this._scheduleReconnect();
+    }
+  }
+
+  async _setBotMenuCommands() {
+    try {
+      // Set menu commands that appear in bot menu (hamburger icon)
+      await this.bot.telegram.setMyCommands([
+        { command: 'login', description: '🔑 Login to your account' },
+        { command: 'help', description: 'ℹ️ Show help and commands' },
+        { command: 'videos', description: '📹 List your videos' },
+        { command: 'imports', description: '📥 Recent import jobs' },
+        { command: 'logout', description: '🚪 Logout from account' }
+      ]);
+      logger.info('Bot menu commands set successfully');
+    } catch (err) {
+      logger.error({ errMsg: err.message }, 'Failed to set bot menu commands');
     }
   }
 
@@ -158,13 +177,6 @@ class TelegramBotService {
     bot.command('link', (ctx) => this._safe(ctx, () => this._onLink(ctx)));
     bot.command('cancel', (ctx) => this._safe(ctx, () => this._onCancel(ctx)));
 
-    // Inline button callbacks
-    bot.action('btn_login', (ctx) => this._safe(ctx, () => this._onButtonLogin(ctx)));
-    bot.action('btn_help', (ctx) => this._safe(ctx, () => this._onButtonHelp(ctx)));
-    bot.action('btn_logout', (ctx) => this._safe(ctx, () => this._onButtonLogout(ctx)));
-    bot.action('btn_videos', (ctx) => this._safe(ctx, () => this._onButtonVideos(ctx)));
-    bot.action('btn_menu', (ctx) => this._safe(ctx, () => this._onButtonMenu(ctx)));
-
     // Single entry point for ALL non-command messages
     bot.on('message', (ctx) => this._safe(ctx, () => this._onAnyMessage(ctx)));
   }
@@ -182,27 +194,16 @@ class TelegramBotService {
   async _onStart(ctx) {
     clearSession(ctx.chat.id);
     
-    // Inline keyboard buttons
-    const keyboard = Markup.inlineKeyboard([
-      [
-        Markup.button.callback('🔑 Login', 'btn_login'),
-        Markup.button.callback('ℹ️ Help', 'btn_help')
-      ],
-      [
-        Markup.button.url('🌐 Visit Website', FRONTEND_URL)
-      ]
-    ]);
-    
     await ctx.reply(
       '👋 Welcome to Zexgram Bot!\n\n' +
       'Monetize your videos and track earnings.\n\n' +
       '📌 Quick Start:\n' +
-      '1. Login to connect your account\n' +
+      '1. Click menu button (☰) below and select "Login"\n' +
       '2. Forward any video directly to this bot\n' +
       '3. Bot uploads to R2 and gives you a share link\n' +
       '4. Share the link — earn on every view!\n\n' +
-      '💡 Tip: Send a photo BEFORE a video to set a custom thumbnail!',
-      keyboard
+      '💡 Tip: Send a photo BEFORE a video to set a custom thumbnail!\n\n' +
+      '🌐 Website: ' + FRONTEND_URL
     );
   }
 
@@ -365,8 +366,7 @@ class TelegramBotService {
 
     if (result.error) {
       return ctx.reply(
-        `❌ Login failed: ${result.error}\n\nUse /login or click button below to try again.`,
-        this._getLoggedOutKeyboard()
+        `❌ Login failed: ${result.error}\n\nUse menu button (☰) and select /login to try again.`
       );
     }
 
@@ -374,8 +374,7 @@ class TelegramBotService {
     await ctx.reply(
       `✅ Logged in as ${result.user.name}!\n\n` +
       "Now forward any video — I'll upload it to R2 and give you a share link automatically!\n\n" +
-      '💡 Tip: Send a photo first to set a custom thumbnail.',
-      this._getLoggedInKeyboard()
+      '💡 Tip: Send a photo first to set a custom thumbnail.'
     );
   }
 
