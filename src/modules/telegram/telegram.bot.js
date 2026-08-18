@@ -5,9 +5,6 @@ const logger = require('../../config/logger');
 const authService = require('../auth/auth.service');
 const videoService = require('../videos/video.service');
 const linkService = require('../links/link.service');
-const analyticsService = require('../analytics/analytics.service');
-const walletService = require('../wallet/wallet.service');
-const withdrawalService = require('../withdrawals/withdrawal.service');
 const ingestService = require('./ingest.service');
 
 const { routeMessage } = require('./message.router');
@@ -44,9 +41,7 @@ const clearSession = (chatId) => sessions.delete(String(chatId));
 const STATES = {
   IDLE: 'IDLE',
   AWAIT_EMAIL: 'AWAIT_EMAIL',
-  AWAIT_PASSWORD: 'AWAIT_PASSWORD',
-  AWAIT_WITHDRAWAL_AMOUNT: 'AWAIT_WITHDRAWAL_AMOUNT',
-  AWAIT_WITHDRAWAL_METHOD: 'AWAIT_WITHDRAWAL_METHOD'
+  AWAIT_PASSWORD: 'AWAIT_PASSWORD'
 };
 
 /* ─── Bot Service ───────────────────────────────────────────────────────── */
@@ -75,8 +70,22 @@ class TelegramBotService {
     logger.info('Telegram bot initializing');
 
     try {
+      // Configure bot options for Local Bot API (if enabled)
+      const botOptions = {};
+      if (telegramConfig.useLocalApi && telegramConfig.localApiUrl) {
+        botOptions.telegram = {
+          apiRoot: telegramConfig.localApiUrl
+        };
+        logger.info({ 
+          useLocalApi: true, 
+          apiRoot: telegramConfig.localApiUrl 
+        }, 'Using Local Bot API server for large file support (up to 2GB)');
+      } else {
+        logger.info('Using standard Telegram Bot API (files limited to 20MB)');
+      }
+
       // Always create a fresh Telegraf instance on reconnect
-      this.bot = new Telegraf(telegramConfig.botToken);
+      this.bot = new Telegraf(telegramConfig.botToken, botOptions);
 
       this.bot.catch((err, ctx) => {
         logger.error({
@@ -147,9 +156,6 @@ class TelegramBotService {
     bot.command('videos', (ctx) => this._safe(ctx, () => this._onVideos(ctx)));
     bot.command('imports', (ctx) => this._safe(ctx, () => this._onImports(ctx)));
     bot.command('link', (ctx) => this._safe(ctx, () => this._onLink(ctx)));
-    bot.command('stats', (ctx) => this._safe(ctx, () => this._onStats(ctx)));
-    bot.command('wallet', (ctx) => this._safe(ctx, () => this._onWallet(ctx)));
-    bot.command('withdraw', (ctx) => this._safe(ctx, () => this._onWithdrawCmd(ctx)));
     bot.command('cancel', (ctx) => this._safe(ctx, () => this._onCancel(ctx)));
 
     // Single entry point for ALL non-command messages
@@ -192,10 +198,6 @@ class TelegramBotService {
       '/videos — List your videos\n' +
       '/imports — Recent import jobs\n' +
       '/link <videoId> — Generate share link\n\n' +
-      '📊 Earnings\n' +
-      '/stats — Analytics overview\n' +
-      '/wallet — Wallet balance\n' +
-      '/withdraw — Request withdrawal\n\n' +
       '🚀 Upload Methods\n' +
       '• Forward any video file → auto upload to R2\n' +
       '• Forward a Zexgram post (photo+link) → duplicate instantly\n' +
@@ -296,46 +298,6 @@ class TelegramBotService {
     }
   }
 
-  /* ─── /stats ──────────────────────────────────────────────────────────── */
-  async _onStats(ctx) {
-    const session = getSession(ctx.chat.id);
-    if (!session.userId) return ctx.reply('Please /login first.');
-
-    const stats = await analyticsService.getCreatorOverview(session.userId);
-    
-    // Format earnings properly (hide partial earnings if no complete views)
-    const earningsDisplay = stats.totalEarnings === 0 ? '$0.000' : `$${stats.totalEarnings.toFixed(3)}`;
-    
-    await ctx.reply(
-      '📊 Your Analytics:\n\n' +
-      `👁 Total Views: ${stats.totalViews}\n` +
-      `💰 Earnings: ${earningsDisplay}`
-    );
-  }
-
-  /* ─── /wallet ─────────────────────────────────────────────────────────── */
-  async _onWallet(ctx) {
-    const session = getSession(ctx.chat.id);
-    if (!session.userId) return ctx.reply('Please /login first.');
-
-    const wallet = await walletService.getWallet(session.userId);
-    await ctx.reply(
-      '💰 Wallet:\n\n' +
-      `Available: $${wallet.availableBalance.toFixed(2)}\n` +
-      `Pending: $${wallet.pendingBalance.toFixed(2)}\n` +
-      `Total Earned: $${wallet.totalEarnings.toFixed(2)}\n` +
-      `Withdrawn: $${wallet.lifetimeWithdrawn.toFixed(2)}`
-    );
-  }
-
-  /* ─── /withdraw ───────────────────────────────────────────────────────── */
-  async _onWithdrawCmd(ctx) {
-    const session = getSession(ctx.chat.id);
-    if (!session.userId) return ctx.reply('Please /login first.');
-    setSession(ctx.chat.id, { state: STATES.AWAIT_WITHDRAWAL_AMOUNT });
-    await ctx.reply('💸 Enter amount to withdraw (minimum ₹100):');
-  }
-
   /* ─── All non-command messages ────────────────────────────────────────── */
   async _onAnyMessage(ctx) {
     const msg = ctx.message;
@@ -345,7 +307,7 @@ class TelegramBotService {
     const session = getSession(chatId);
     const text = (msg.text || msg.caption || '').trim();
 
-    // State machine first — login/withdrawal flow
+    // State machine — login flow only
     if (session.state === STATES.AWAIT_EMAIL) {
       if (!text) return ctx.reply('Please enter your email:');
       setSession(chatId, { email: text, state: STATES.AWAIT_PASSWORD });
@@ -354,15 +316,6 @@ class TelegramBotService {
     if (session.state === STATES.AWAIT_PASSWORD) {
       if (!text) return ctx.reply('Please enter your password:');
       return this._processLogin(ctx, chatId, session.email, text);
-    }
-    if (session.state === STATES.AWAIT_WITHDRAWAL_AMOUNT) {
-      const amount = parseFloat(text);
-      if (isNaN(amount) || amount <= 0) return ctx.reply('Invalid amount. Enter a valid number:');
-      setSession(chatId, { pendingWithdrawalAmount: amount, state: STATES.AWAIT_WITHDRAWAL_METHOD });
-      return ctx.reply('💳 Choose payment method:', Markup.keyboard([['UPI', 'BANK_TRANSFER']]).oneTime().resize());
-    }
-    if (session.state === STATES.AWAIT_WITHDRAWAL_METHOD) {
-      return this._processWithdrawal(ctx, chatId, session, text);
     }
 
     // Delegate to routeMessage — handles all media + links with correct priority
@@ -403,28 +356,6 @@ class TelegramBotService {
     );
   }
 
-  /* ─── Withdrawal processor ────────────────────────────────────────────── */
-  async _processWithdrawal(ctx, chatId, session, method) {
-    const normalized = method.toUpperCase().replace(/\s+/g, '_');
-    if (!['UPI', 'BANK_TRANSFER'].includes(normalized)) {
-      return ctx.reply('Choose UPI or BANK_TRANSFER:', Markup.keyboard([['UPI', 'BANK_TRANSFER']]).oneTime().resize());
-    }
-
-    setSession(chatId, { state: STATES.IDLE });
-
-    const result = await withdrawalService.createWithdrawal(
-      session.userId, session.pendingWithdrawalAmount, { type: normalized }
-    ).catch((err) => ({ error: err.message }));
-
-    if (result.error) {
-      return ctx.reply(`❌ Failed: ${result.error}`, Markup.removeKeyboard());
-    }
-
-    await ctx.reply(
-      `✅ Withdrawal Requested!\n\nAmount: ₹${result.amount}\nMethod: ${normalized}\nStatus: PENDING`,
-      Markup.removeKeyboard()
-    );
-  }
 }
 
 module.exports = new TelegramBotService();
