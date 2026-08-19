@@ -2,7 +2,7 @@ const { sendResetEmail } = require('../services/emailService');
 const logger = require('./logger');
 
 /**
- * Email configuration for ClipNova
+ * Email configuration for Zexgram
  * Uses Gmail API with OAuth2 for password reset emails
  */
 

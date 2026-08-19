@@ -1,4 +1,4 @@
-# ClipNova Backend - Quick Start Guide
+# Zexgram Backend - Quick Start Guide
 
 ## 🚀 Get Started in 5 Minutes
 
@@ -30,7 +30,7 @@ NODE_ENV=development
 PORT=5000
 
 # Local MongoDB
-MONGODB_URI=mongodb://localhost:27017/clipnova
+MONGODB_URI=mongodb://localhost:27017/zexgram
 
 # Generate random secrets (use strong values in production)
 JWT_ACCESS_SECRET=dev-access-secret-change-in-production-min-32-chars
@@ -40,7 +40,7 @@ JWT_REFRESH_SECRET=dev-refresh-secret-change-in-production-min-32-chars
 R2_ACCOUNT_ID=your-account-id
 R2_ACCESS_KEY_ID=your-access-key
 R2_SECRET_ACCESS_KEY=your-secret-key
-R2_BUCKET_NAME=clipnova-videos
+R2_BUCKET_NAME=zexgram-videos
 R2_PUBLIC_URL=https://your-bucket-url.com
 
 # CORS (frontend URL)
@@ -60,7 +60,7 @@ npm run seed:settings
 ```
 
 **Default Super Admin Credentials:**
-- Email: `admin@clipnova.com`
+- Email: `admin@zexgram.com`
 - Password: `Admin@123`
 
 ⚠️ **Change password after first login!**

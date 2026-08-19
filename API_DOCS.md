@@ -1,4 +1,4 @@
-# ClipNova API Documentation
+# Zexgram API Documentation
 
 Base URL: `http://localhost:5000/api`
 
@@ -153,9 +153,9 @@ POST /auth/forgot-password
 ```
 
 **Email Sent:**
-- Subject: "Reset Your Password - ClipNova"
+- Subject: "Reset Your Password - Zexgram"
 - Contains a clickable button with reset link
-- Link format: `https://frontend.com/reset-password?token=abc123xyz`
+- Link format: `https://www.zexgram.in/reset-password?token=abc123xyz`
 - Professional HTML email template with styling
 - Link expires in 1 hour
 - Link can only be used once

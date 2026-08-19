@@ -28,14 +28,14 @@ async function sendResetEmail(toEmail, resetToken) {
     const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
 
     const mailOptions = {
-      from: `ClipNova <${process.env.GMAIL_USER}>`,
+      from: `Zexgram <${process.env.GMAIL_USER}>`,
       to: toEmail,
-      subject: 'Reset Your Password - ClipNova',
+      subject: 'Reset Your Password - Zexgram',
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <h2 style="color: #3b82f6;">Password Reset Request</h2>
           <p>Hello,</p>
-          <p>We received a request to reset your password for your ClipNova account.</p>
+          <p>We received a request to reset your password for your Zexgram account.</p>
           <p>Click the button below to reset your password:</p>
           <a href="${resetLink}" 
              style="display: inline-block; background: #3b82f6; color: white; 

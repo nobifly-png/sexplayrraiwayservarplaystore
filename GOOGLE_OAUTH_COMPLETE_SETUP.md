@@ -267,7 +267,7 @@ http://localhost:5000/api/auth/google/callback
 GMAIL_CLIENT_ID=your-client-id.apps.googleusercontent.com
 GMAIL_CLIENT_SECRET=GOCSPX-your-client-secret
 APP_URL=https://sexplayrraiwayservarplaystore-production.up.railway.app
-FRONTEND_URL=https://clipnovawebistefronendvarsel-gyum.vercel.app
+FRONTEND_URL=https://www.zexgram.in
 ```
 
 ---

@@ -1,4 +1,4 @@
-# ✅ Backend Verification Results - ClipNova
+# ✅ Backend Verification Results - Zexgram
 
 ## 🔍 Verification Date
 **Date:** $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
@@ -146,7 +146,7 @@ EMAIL_PORT=587
 EMAIL_SECURE=false
 EMAIL_USER=your-email@gmail.com
 EMAIL_PASSWORD=your-app-password
-EMAIL_FROM_NAME=ClipNova
+EMAIL_FROM_NAME=Zexgram
 
 # Frontend URL (for reset links)
 FRONTEND_URL=https://your-website.com

@@ -19,9 +19,9 @@ R2_BUCKET_NAME=clipnova
 R2_ENDPOINT=https://9eb21a93fe24eb749b65eaa4252d2319.r2.cloudflarestorage.com
 R2_PUBLIC_BASE_URL=https://pub-11c2b603246a4f87b285e337ee6ad598.r2.dev
 R2_REGION=auto
-CORS_ORIGIN=https://clipnovawebistefronendvarsel-gyum.vercel.app,https://clipnovawebistefronendvarsel-ayfe2t14r.vercel.app,http://localhost:5173,http://localhost:5175
-ALLOWED_ORIGINS=https://clipnovawebistefronendvarsel-gyum.vercel.app,https://clipnovawebistefronendvarsel-ayfe2t14r.vercel.app,http://localhost:5173,http://localhost:5175
-SUPER_ADMIN_ALLOWLIST=admin@clipnova.local
+CORS_ORIGIN=https://www.zexgram.in,http://localhost:5173,http://localhost:5175
+ALLOWED_ORIGINS=https://www.zexgram.in,http://localhost:5173,http://localhost:5175
+SUPER_ADMIN_ALLOWLIST=admin@zexgram.local
 TELEGRAM_BOT_ENABLED=true
 TELEGRAM_BOT_TOKEN=8746932680:AAHNBa3jKNXLKlROROf3iwamKoI3Spr0pKg
 TRUST_PROXY=1
@@ -30,13 +30,13 @@ MIN_WITHDRAWAL_AMOUNT=100
 MAX_VIEWS_PER_IP_PER_HOUR=10
 MIN_WATCH_SECONDS=5
 MAX_UPLOAD_SIZE_BYTES=1073741824
-FRONTEND_URL=https://clipnovawebistefronendvarsel-gyum.vercel.app
+FRONTEND_URL=https://www.zexgram.in
 EMAIL_HOST=smtp.gmail.com
 EMAIL_PORT=587
 EMAIL_SECURE=false
 EMAIL_USER=zexgram@gmail.com
 EMAIL_PASSWORD=ktjyvzbopbcctjf
-EMAIL_FROM_NAME=ClipNova
+EMAIL_FROM_NAME=Zexgram
 ```
 
 ---
@@ -48,7 +48,7 @@ Agar sirf 3 variables update karne hain:
 ### Variable 1: FRONTEND_URL
 ```
 Variable Name: FRONTEND_URL
-Variable Value: https://clipnovawebistefronendvarsel-gyum.vercel.app
+Variable Value: https://www.zexgram.in
 ```
 
 ### Variable 2: DEFAULT_EARNINGS_PER_VIEW
@@ -60,7 +60,7 @@ Variable Value: 0.001
 ### Variable 3: ALLOWED_ORIGINS
 ```
 Variable Name: ALLOWED_ORIGINS
-Variable Value: https://clipnovawebistefronendvarsel-gyum.vercel.app,https://clipnovawebistefronendvarsel-ayfe2t14r.vercel.app,http://localhost:5173,http://localhost:5175
+Variable Value: https://www.zexgram.in,https://clipnovawebistefronendvarsel-ayfe2t14r.vercel.app,http://localhost:5173,http://localhost:5175
 ```
 
 ---
@@ -100,13 +100,13 @@ R2_REGION=auto
 
 ### 5. CORS Configuration
 ```
-CORS_ORIGIN=https://clipnovawebistefronendvarsel-gyum.vercel.app,https://clipnovawebistefronendvarsel-ayfe2t14r.vercel.app,http://localhost:5173,http://localhost:5175
-ALLOWED_ORIGINS=https://clipnovawebistefronendvarsel-gyum.vercel.app,https://clipnovawebistefronendvarsel-ayfe2t14r.vercel.app,http://localhost:5173,http://localhost:5175
+CORS_ORIGIN=https://www.zexgram.in,http://localhost:5173,http://localhost:5175
+ALLOWED_ORIGINS=https://www.zexgram.in,http://localhost:5173,http://localhost:5175
 ```
 
 ### 6. Super Admin
 ```
-SUPER_ADMIN_ALLOWLIST=admin@clipnova.local
+SUPER_ADMIN_ALLOWLIST=admin@zexgram.local
 ```
 
 ### 7. Telegram Bot
@@ -126,7 +126,7 @@ MAX_UPLOAD_SIZE_BYTES=1073741824
 
 ### 9. Frontend URL (CORRECTED - IMPORTANT!)
 ```
-FRONTEND_URL=https://clipnovawebistefronendvarsel-gyum.vercel.app
+FRONTEND_URL=https://www.zexgram.in
 ```
 
 ### 10. Email Configuration
@@ -136,7 +136,7 @@ EMAIL_PORT=587
 EMAIL_SECURE=false
 EMAIL_USER=zexgram@gmail.com
 EMAIL_PASSWORD=ktjyvzbopbcctjf
-EMAIL_FROM_NAME=ClipNova
+EMAIL_FROM_NAME=Zexgram
 ```
 
 ---
@@ -181,15 +181,15 @@ Update these 3 critical variables:
 ```
 
 ### Check 2: Test Password Reset
-1. Go to: https://clipnovawebistefronendvarsel-gyum.vercel.app/login
+1. Go to: https://www.zexgram.in/login
 2. Click "Forgot Password?"
 3. Enter: nobifly@gmail.com
 4. Should see: "Reset link sent to your email"
 
 ### Check 3: Check Email
-- Email subject: "Reset Your Password - ClipNova"
-- Email from: "ClipNova <zexgram@gmail.com>"
-- Link should start with: https://clipnovawebistefronendvarsel-gyum.vercel.app/reset-password?token=...
+- Email subject: "Reset Your Password - Zexgram"
+- Email from: "Zexgram <zexgram@gmail.com>"
+- Link should start with: https://www.zexgram.in/reset-password?token=...
 
 ---
 
@@ -203,7 +203,7 @@ FRONTEND_URL=https://sexplayrraiwayservarplaystore-production.up.railway.app
 
 **NEW (CORRECT):**
 ```
-FRONTEND_URL=https://clipnovawebistefronendvarsel-gyum.vercel.app
+FRONTEND_URL=https://www.zexgram.in
 ```
 
 This is the most important change! Password reset emails must link to frontend, not backend.
@@ -248,7 +248,7 @@ Invalid login: 535-5.7.8 Username and Password not accepted
 1. Go to: https://myaccount.google.com/security
 2. Enable 2-Step Verification
 3. Go to: https://myaccount.google.com/apppasswords
-4. Create new app password for "ClipNova"
+4. Create new app password for "Zexgram"
 5. Update in Railway:
    ```
    EMAIL_PASSWORD=xxxx xxxx xxxx xxxx
@@ -264,7 +264,7 @@ Access blocked by CORS policy
 **Solution:**
 Verify `ALLOWED_ORIGINS` includes Vercel URLs:
 ```
-ALLOWED_ORIGINS=https://clipnovawebistefronendvarsel-gyum.vercel.app,https://clipnovawebistefronendvarsel-ayfe2t14r.vercel.app,http://localhost:5173,http://localhost:5175
+ALLOWED_ORIGINS=https://www.zexgram.in,http://localhost:5173,http://localhost:5175
 ```
 
 ---

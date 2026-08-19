@@ -76,7 +76,7 @@ const config = {
   },
   superAdmin: {
     name: process.env.SUPER_ADMIN_NAME || 'Super Admin',
-    email: process.env.SUPER_ADMIN_EMAIL || 'admin@clipnova.local',
+    email: process.env.SUPER_ADMIN_EMAIL || 'admin@zexgram.local',
     password: process.env.SUPER_ADMIN_PASSWORD
   },
   /** Express trust proxy setting (from TRUST_PROXY). Default false for local dev. */

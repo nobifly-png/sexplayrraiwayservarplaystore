@@ -2,7 +2,7 @@
 
 ## Overview
 
-ClipNova uses a **4:1 view counting ratio** where 4 real views equal 1 counted view that's displayed to admins.
+Zexgram uses a **4:1 view counting ratio** where 4 real views equal 1 counted view that's displayed to admins.
 
 ---
 

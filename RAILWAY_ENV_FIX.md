@@ -8,7 +8,7 @@
 FRONTEND_URL="https://sexplayrraiwayservarplaystore-production.up.railway.app"
 
 # Should be (CORRECT):
-FRONTEND_URL="https://clipnovawebistefronendvarsel-gyum.vercel.app"
+FRONTEND_URL="https://www.zexgram.in"
 ```
 
 **Why:** Password reset emails mein wrong link ja raha hai. Backend ki URL nahi, frontend ki URL chahiye.
@@ -70,15 +70,15 @@ R2_PUBLIC_BASE_URL=https://pub-11c2b603246a4f87b285e337ee6ad598.r2.dev
 R2_REGION=auto
 
 # CORS Configuration
-CORS_ORIGIN=https://clipnovawebistefronendvarsel-gyum.vercel.app,https://clipnovawebistefronendvarsel-ayfe2t14r.vercel.app,http://localhost:5173,http://localhost:5175
-ALLOWED_ORIGINS=https://clipnovawebistefronendvarsel-gyum.vercel.app,https://clipnovawebistefronendvarsel-ayfe2t14r.vercel.app,http://localhost:5173,http://localhost:5175
+CORS_ORIGIN=https://www.zexgram.in,http://localhost:5173,http://localhost:5175
+ALLOWED_ORIGINS=https://www.zexgram.in,http://localhost:5173,http://localhost:5175
 
 # Telegram Bot
 TELEGRAM_BOT_ENABLED=true
 TELEGRAM_BOT_TOKEN=8746932680:AAHNBa3jKNXLKlROROf3iwamKoI3Spr0pKg
 
 # Super Admin
-SUPER_ADMIN_ALLOWLIST=admin@clipnova.local
+SUPER_ADMIN_ALLOWLIST=admin@zexgram.local
 
 # Trust Proxy (Railway)
 TRUST_PROXY=1
@@ -91,7 +91,7 @@ MIN_WATCH_SECONDS=5
 MAX_UPLOAD_SIZE_BYTES=1073741824
 
 # Frontend URL (CORRECTED)
-FRONTEND_URL=https://clipnovawebistefronendvarsel-gyum.vercel.app
+FRONTEND_URL=https://www.zexgram.in
 
 # Email Configuration (CHECK IF VALID)
 EMAIL_HOST=smtp.gmail.com
@@ -99,7 +99,7 @@ EMAIL_PORT=587
 EMAIL_SECURE=false
 EMAIL_USER=zexgram@gmail.com
 EMAIL_PASSWORD=ktjyvzbopbcctjf
-EMAIL_FROM_NAME=ClipNova
+EMAIL_FROM_NAME=Zexgram
 ```
 
 ---
@@ -122,7 +122,7 @@ Agar `zexgram@gmail.com` ka password invalid hai, toh naya setup karo:
 1. Go to: https://myaccount.google.com/security
 2. Enable **2-Step Verification**
 3. Go to: https://myaccount.google.com/apppasswords
-4. Create app password for "ClipNova"
+4. Create app password for "Zexgram"
 5. Copy 16-character password (e.g., `abcd efgh ijkl mnop`)
 6. Update Railway:
    ```env
@@ -147,9 +147,9 @@ Agar `zexgram@gmail.com` ka password invalid hai, toh naya setup karo:
 3. Find and update these 3 variables:
 
 ```
-FRONTEND_URL = https://clipnovawebistefronendvarsel-gyum.vercel.app
+FRONTEND_URL = https://www.zexgram.in
 DEFAULT_EARNINGS_PER_VIEW = 0.001
-ALLOWED_ORIGINS = https://clipnovawebistefronendvarsel-gyum.vercel.app,https://clipnovawebistefronendvarsel-ayfe2t14r.vercel.app,http://localhost:5173,http://localhost:5175
+ALLOWED_ORIGINS = https://www.zexgram.in,http://localhost:5173,http://localhost:5175
 ```
 
 ### Step 3: Optional - Update Email
@@ -159,7 +159,7 @@ If email is failing:
 ```
 EMAIL_USER = your-valid-email@gmail.com
 EMAIL_PASSWORD = your-16-char-app-password
-EMAIL_FROM_NAME = ClipNova
+EMAIL_FROM_NAME = Zexgram
 ```
 
 ### Step 4: Redeploy
@@ -168,7 +168,7 @@ Railway will automatically redeploy after variable changes. Wait ~2-3 minutes.
 
 ### Step 5: Test
 
-1. Go to frontend: https://clipnovawebistefronendvarsel-gyum.vercel.app
+1. Go to frontend: https://www.zexgram.in
 2. Click "Forgot Password?"
 3. Enter email: `nobifly@gmail.com`
 4. Check Railway logs for success/error
@@ -232,7 +232,7 @@ Error: connect ETIMEDOUT
 3. **Email Test:**
    - [ ] Check email inbox
    - [ ] Should receive password reset email
-   - [ ] Email subject: "Reset Your Password - ClipNova"
+   - [ ] Email subject: "Reset Your Password - Zexgram"
    - [ ] Link should point to Vercel frontend
 
 4. **Reset Password Test:**

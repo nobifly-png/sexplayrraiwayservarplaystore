@@ -67,7 +67,7 @@ Website AI ne successfully implement kar diya:
 
 **From .env:**
 ```env
-ALLOWED_ORIGINS=https://clipnovawebistefronendvarsel-gyum.vercel.app,http://localhost:5175,https://sexplayrraiwayservarplaystore.up.railway.app
+ALLOWED_ORIGINS=https://www.zexgram.in,http://localhost:5175,https://sexplayrraiwayservarplaystore.up.railway.app
 ```
 
 **CORS Logic:**
@@ -92,7 +92,7 @@ EMAIL_PORT=587                     ✅
 EMAIL_SECURE=false                 ✅
 EMAIL_USER=your-email@gmail.com    ⚠️ PLACEHOLDER
 EMAIL_PASSWORD=your-app-password   ⚠️ PLACEHOLDER
-EMAIL_FROM_NAME=ClipNova           ✅
+EMAIL_FROM_NAME=Zexgram           ✅
 ```
 
 **Action Required:**
@@ -106,7 +106,7 @@ EMAIL_PASSWORD=xxxx xxxx xxxx xxxx  # 16-character app password
 1. Go to https://myaccount.google.com/security
 2. Enable 2-Step Verification
 3. Go to https://myaccount.google.com/apppasswords
-4. Create "ClipNova" app password
+4. Create "Zexgram" app password
 5. Copy 16-character password
 6. Paste in EMAIL_PASSWORD
 
@@ -125,7 +125,7 @@ FRONTEND_URL=https://sexplayrraiwayservarplaystore-production.up.railway.app
 FRONTEND_URL=http://localhost:5173
 
 # For production (Vercel):
-FRONTEND_URL=https://clipnovawebistefronendvarsel-gyum.vercel.app
+FRONTEND_URL=https://www.zexgram.in
 ```
 
 **Used In:**
@@ -239,12 +239,12 @@ cd d:/novavscode
 nano .env  # or use any text editor
 
 # Change these lines:
-FRONTEND_URL=https://clipnovawebistefronendvarsel-gyum.vercel.app
+FRONTEND_URL=https://www.zexgram.in
 EMAIL_USER=nitinchouhan@gmail.com
 EMAIL_PASSWORD=your-16-char-app-password
 
 # Verify ALLOWED_ORIGINS includes frontend:
-ALLOWED_ORIGINS=https://clipnovawebistefronendvarsel-gyum.vercel.app,http://localhost:5173,http://localhost:5175
+ALLOWED_ORIGINS=https://www.zexgram.in,http://localhost:5173,http://localhost:5175
 ```
 
 ### Frontend (.env Already Correct)
@@ -254,7 +254,7 @@ cd d:/pri22/ViewBox
 
 # Verify .env has:
 VITE_API_BASE_URL=https://sexplayrraiwayservarplaystore.up.railway.app/api
-VITE_APP_NAME=ClipNova
+VITE_APP_NAME=Zexgram
 VITE_API_TIMEOUT=15000
 ```
 
@@ -487,7 +487,7 @@ FRONTEND_URL=https://your-actual-frontend-url.com
 
 1. **Update Backend .env:**
    ```env
-   FRONTEND_URL=https://clipnovawebistefronendvarsel-gyum.vercel.app
+   FRONTEND_URL=https://www.zexgram.in
    EMAIL_USER=nitinchouhan@gmail.com
    EMAIL_PASSWORD=your-16-char-app-password
    ```

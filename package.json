@@ -1,7 +1,7 @@
 {
-  "name": "clipnova-backend",
+  "name": "zexgram-backend",
   "version": "1.0.0",
-  "description": "ClipNova Video Monetization Backend",
+  "description": "Zexgram Video Monetization Backend",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",

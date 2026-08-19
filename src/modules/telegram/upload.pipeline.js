@@ -16,7 +16,7 @@ const { generateThumbnailFromUrl, transcodeToCompatible } = require('./ffmpeg.se
 const logger = require('../../config/logger');
 const telegramConfig = require('../../config/telegram');
 
-const FRONTEND_URL = process.env.FRONTEND_URL || process.env.APP_URL || 'https://clipnovawebistefronendvarsel.vercel.app';
+const FRONTEND_URL = process.env.FRONTEND_URL || process.env.APP_URL || 'https://www.zexgram.in';
 
 /* ─── Format message with header/footer ────────────────────────────────── */
 const formatMessageWithHeaderFooter = async (userId, shareUrl, videoTitle) => {

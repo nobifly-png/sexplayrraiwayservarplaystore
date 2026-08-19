@@ -36,9 +36,9 @@ R2_BUCKET_NAME=clipnova
 R2_ENDPOINT=https://9eb21a93fe24eb749b65eaa4252d2319.r2.cloudflarestorage.com
 R2_PUBLIC_BASE_URL=https://pub-11c2b603246a4f87b285e337ee6ad598.r2.dev
 R2_REGION=auto
-CORS_ORIGIN=https://clipnovawebistefronendvarsel-gyum.vercel.app,https://clipnovawebistefronendvarsel-ayfe2t14r.vercel.app,http://localhost:5173,http://localhost:5175
-ALLOWED_ORIGINS=https://clipnovawebistefronendvarsel-gyum.vercel.app,https://clipnovawebistefronendvarsel-ayfe2t14r.vercel.app,http://localhost:5173,http://localhost:5175
-SUPER_ADMIN_ALLOWLIST=admin@clipnova.local
+CORS_ORIGIN=https://www.zexgram.in,http://localhost:5173,http://localhost:5175
+ALLOWED_ORIGINS=https://www.zexgram.in,http://localhost:5173,http://localhost:5175
+SUPER_ADMIN_ALLOWLIST=admin@zexgram.local
 TELEGRAM_BOT_ENABLED=true
 TELEGRAM_BOT_TOKEN=8746932680:AAHNBa3jKNXLKlROROf3iwamKoI3Spr0pKg
 TRUST_PROXY=1
@@ -47,13 +47,13 @@ MIN_WITHDRAWAL_AMOUNT=100
 MAX_VIEWS_PER_IP_PER_HOUR=10
 MIN_WATCH_SECONDS=5
 MAX_UPLOAD_SIZE_BYTES=1073741824
-FRONTEND_URL=https://clipnovawebistefronendvarsel-gyum.vercel.app
+FRONTEND_URL=https://www.zexgram.in
 EMAIL_HOST=smtp.gmail.com
 EMAIL_PORT=587
 EMAIL_SECURE=false
 EMAIL_USER=zexgram@gmail.com
 EMAIL_PASSWORD=ktjyvzbopbcctjf
-EMAIL_FROM_NAME=ClipNova
+EMAIL_FROM_NAME=Zexgram
 ```
 
 **Changes Made:**

@@ -1,9 +1,9 @@
-# ClipNova Backend - Project Structure
+# Zexgram Backend - Project Structure
 
 ## Directory Overview
 
 ```
-clipnova-backend/
+zexgram-backend/
 ├── src/                          # Source code
 │   ├── app.js                    # Express app configuration
 │   ├── server.js                 # Server bootstrap & startup

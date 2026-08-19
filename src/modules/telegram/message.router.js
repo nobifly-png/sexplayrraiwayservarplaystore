@@ -8,7 +8,7 @@ const Link = require('../links/link.model');
 const logger = require('../../config/logger');
 const telegramConfig = require('../../config/telegram');
 
-const FRONTEND_URL = process.env.FRONTEND_URL || process.env.APP_URL || 'https://clipnovawebistefronendvarsel.vercel.app';
+const FRONTEND_URL = process.env.FRONTEND_URL || process.env.APP_URL || 'https://www.zexgram.in';
 const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
 
 // Use Local Bot API base URL if configured, otherwise standard API

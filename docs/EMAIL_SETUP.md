@@ -30,7 +30,7 @@ The forgot password feature sends a secure reset link to the user's email addres
 #### Step 2: Generate App Password
 1. Go to: https://myaccount.google.com/apppasswords
 2. Select "Mail" as the app
-3. Select "Other" as the device and name it "ClipNova"
+3. Select "Other" as the device and name it "Zexgram"
 4. Click "Generate"
 5. Copy the 16-character app password
 
@@ -41,7 +41,7 @@ EMAIL_PORT=587
 EMAIL_SECURE=false
 EMAIL_USER=your-email@gmail.com
 EMAIL_PASSWORD=your-16-char-app-password
-EMAIL_FROM_NAME=ClipNova
+EMAIL_FROM_NAME=Zexgram
 ```
 
 ---
@@ -56,7 +56,7 @@ EMAIL_FROM_NAME=ClipNova
 #### Step 2: Create API Key
 1. Go to Settings → API Keys
 2. Click "Create API Key"
-3. Name it "ClipNova"
+3. Name it "Zexgram"
 4. Select "Full Access" or "Mail Send" only
 5. Copy the API key
 
@@ -67,7 +67,7 @@ EMAIL_PORT=587
 EMAIL_SECURE=false
 EMAIL_USER=apikey
 EMAIL_PASSWORD=your-sendgrid-api-key
-EMAIL_FROM_NAME=ClipNova
+EMAIL_FROM_NAME=Zexgram
 ```
 
 ---
@@ -80,7 +80,7 @@ EMAIL_PORT=587
 EMAIL_SECURE=false
 EMAIL_USER=your-email@outlook.com
 EMAIL_PASSWORD=your-password
-EMAIL_FROM_NAME=ClipNova
+EMAIL_FROM_NAME=Zexgram
 ```
 
 ---
@@ -98,7 +98,7 @@ EMAIL_PORT=587
 EMAIL_SECURE=false
 EMAIL_USER=your-aws-smtp-username
 EMAIL_PASSWORD=your-aws-smtp-password
-EMAIL_FROM_NAME=ClipNova
+EMAIL_FROM_NAME=Zexgram
 ```
 
 ---
@@ -136,8 +136,8 @@ Or if not configured:
 
 The password reset email includes:
 
-- **Subject:** "Reset Your Password - ClipNova"
-- **Professional HTML design** with ClipNova branding
+- **Subject:** "Reset Your Password - Zexgram"
+- **Professional HTML design** with Zexgram branding
 - **Large "Reset Password" button** with the reset link
 - **Plain text version** of the link for copy/paste
 - **Security warnings**:

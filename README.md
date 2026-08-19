@@ -1,10 +1,10 @@
-# ClipNova Backend
+# Zexgram Backend
 
-Production-ready backend for ClipNova video monetization platform.
+Production-ready backend for Zexgram video monetization platform.
 
 ## Overview
 
-ClipNova is a video monetization backend where creators can upload videos or add external video links, generate shareable short links, and earn money when real users watch their videos through those links.
+Zexgram is a video monetization backend where creators can upload videos or add external video links, generate shareable short links, and earn money when real users watch their videos through those links.
 
 ## Tech Stack
 
@@ -251,7 +251,7 @@ src/
 After running seed scripts:
 
 **Super Admin:**
-- Email: `admin@clipnova.com`
+- Email: `admin@zexgram.com`
 - Password: `Admin@123`
 
 ⚠️ **IMPORTANT**: Change the password immediately after first login!

@@ -1,4 +1,4 @@
-# ClipNova Backend - Setup Status & Instructions
+# Zexgram Backend - Setup Status & Instructions
 
 ## ✅ COMPLETED FIXES
 
@@ -33,13 +33,13 @@ Choose ONE of these options:
 #### Option 1: Local MongoDB (Recommended for Development)
 1. Install MongoDB Community Edition: https://www.mongodb.com/try/download/community
 2. Start MongoDB service
-3. Your .env already has: `MONGODB_URI=mongodb://localhost:27017/clipnova`
+3. Your .env already has: `MONGODB_URI=mongodb://localhost:27017/zexgram`
 
 #### Option 2: MongoDB Atlas (Cloud - Free Tier Available)
 1. Create account at: https://www.mongodb.com/cloud/atlas
 2. Create a free cluster
 3. Get connection string
-4. Update .env: `MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/clipnova`
+4. Update .env: `MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/zexgram`
 
 ---
 
@@ -107,7 +107,7 @@ npm run seed:settings
 ```
 
 ### Default Admin Credentials
-- Email: admin@clipnova.com
+- Email: admin@zexgram.com
 - Password: Admin@123
 ⚠️ Change this password after first login!
 
@@ -179,7 +179,7 @@ npm run seed:settings
 ```bash
 curl -X POST http://localhost:5000/api/auth/login \
   -H "Content-Type: application/json" \
-  -d "{\"email\":\"admin@clipnova.com\",\"password\":\"Admin@123\"}"
+  -d "{\"email\":\"admin@zexgram.com\",\"password\":\"Admin@123\"}"
 ```
 
 ---
