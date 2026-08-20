@@ -19,8 +19,8 @@ R2_BUCKET_NAME=clipnova
 R2_ENDPOINT=https://9eb21a93fe24eb749b65eaa4252d2319.r2.cloudflarestorage.com
 R2_PUBLIC_BASE_URL=https://pub-11c2b603246a4f87b285e337ee6ad598.r2.dev
 R2_REGION=auto
-CORS_ORIGIN=https://www.zexgram.in,http://localhost:5173,http://localhost:5175
-ALLOWED_ORIGINS=https://www.zexgram.in,http://localhost:5173,http://localhost:5175
+CORS_ORIGIN=https://www.zaxgram.com,http://localhost:5173,http://localhost:5175
+ALLOWED_ORIGINS=https://www.zaxgram.com,http://localhost:5173,http://localhost:5175
 SUPER_ADMIN_ALLOWLIST=admin@zexgram.local
 TELEGRAM_BOT_ENABLED=true
 TELEGRAM_BOT_TOKEN=8746932680:AAHNBa3jKNXLKlROROf3iwamKoI3Spr0pKg
@@ -30,7 +30,7 @@ MIN_WITHDRAWAL_AMOUNT=100
 MAX_VIEWS_PER_IP_PER_HOUR=10
 MIN_WATCH_SECONDS=5
 MAX_UPLOAD_SIZE_BYTES=1073741824
-FRONTEND_URL=https://www.zexgram.in
+FRONTEND_URL=https://www.zaxgram.com
 EMAIL_HOST=smtp.gmail.com
 EMAIL_PORT=587
 EMAIL_SECURE=false
@@ -48,7 +48,7 @@ Agar sirf 3 variables update karne hain:
 ### Variable 1: FRONTEND_URL
 ```
 Variable Name: FRONTEND_URL
-Variable Value: https://www.zexgram.in
+Variable Value: https://www.zaxgram.com
 ```
 
 ### Variable 2: DEFAULT_EARNINGS_PER_VIEW
@@ -60,7 +60,7 @@ Variable Value: 0.001
 ### Variable 3: ALLOWED_ORIGINS
 ```
 Variable Name: ALLOWED_ORIGINS
-Variable Value: https://www.zexgram.in,https://clipnovawebistefronendvarsel-ayfe2t14r.vercel.app,http://localhost:5173,http://localhost:5175
+Variable Value: https://www.zaxgram.com,https://clipnovawebistefronendvarsel-ayfe2t14r.vercel.app,http://localhost:5173,http://localhost:5175
 ```
 
 ---
@@ -100,8 +100,8 @@ R2_REGION=auto
 
 ### 5. CORS Configuration
 ```
-CORS_ORIGIN=https://www.zexgram.in,http://localhost:5173,http://localhost:5175
-ALLOWED_ORIGINS=https://www.zexgram.in,http://localhost:5173,http://localhost:5175
+CORS_ORIGIN=https://www.zaxgram.com,http://localhost:5173,http://localhost:5175
+ALLOWED_ORIGINS=https://www.zaxgram.com,http://localhost:5173,http://localhost:5175
 ```
 
 ### 6. Super Admin
@@ -126,7 +126,7 @@ MAX_UPLOAD_SIZE_BYTES=1073741824
 
 ### 9. Frontend URL (CORRECTED - IMPORTANT!)
 ```
-FRONTEND_URL=https://www.zexgram.in
+FRONTEND_URL=https://www.zaxgram.com
 ```
 
 ### 10. Email Configuration
@@ -181,7 +181,7 @@ Update these 3 critical variables:
 ```
 
 ### Check 2: Test Password Reset
-1. Go to: https://www.zexgram.in/login
+1. Go to: https://www.zaxgram.com/login
 2. Click "Forgot Password?"
 3. Enter: nobifly@gmail.com
 4. Should see: "Reset link sent to your email"
@@ -189,7 +189,7 @@ Update these 3 critical variables:
 ### Check 3: Check Email
 - Email subject: "Reset Your Password - Zexgram"
 - Email from: "Zexgram <zexgram@gmail.com>"
-- Link should start with: https://www.zexgram.in/reset-password?token=...
+- Link should start with: https://www.zaxgram.com/reset-password?token=...
 
 ---
 
@@ -203,7 +203,7 @@ FRONTEND_URL=https://sexplayrraiwayservarplaystore-production.up.railway.app
 
 **NEW (CORRECT):**
 ```
-FRONTEND_URL=https://www.zexgram.in
+FRONTEND_URL=https://www.zaxgram.com
 ```
 
 This is the most important change! Password reset emails must link to frontend, not backend.

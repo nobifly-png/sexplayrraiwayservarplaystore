@@ -67,7 +67,7 @@ Website AI ne successfully implement kar diya:
 
 **From .env:**
 ```env
-ALLOWED_ORIGINS=https://www.zexgram.in,http://localhost:5175,https://sexplayrraiwayservarplaystore.up.railway.app
+ALLOWED_ORIGINS=https://www.zaxgram.com,http://localhost:5175,https://sexplayrraiwayservarplaystore.up.railway.app
 ```
 
 **CORS Logic:**
@@ -125,7 +125,7 @@ FRONTEND_URL=https://sexplayrraiwayservarplaystore-production.up.railway.app
 FRONTEND_URL=http://localhost:5173
 
 # For production (Vercel):
-FRONTEND_URL=https://www.zexgram.in
+FRONTEND_URL=https://www.zaxgram.com
 ```
 
 **Used In:**
@@ -239,12 +239,12 @@ cd d:/novavscode
 nano .env  # or use any text editor
 
 # Change these lines:
-FRONTEND_URL=https://www.zexgram.in
+FRONTEND_URL=https://www.zaxgram.com
 EMAIL_USER=nitinchouhan@gmail.com
 EMAIL_PASSWORD=your-16-char-app-password
 
 # Verify ALLOWED_ORIGINS includes frontend:
-ALLOWED_ORIGINS=https://www.zexgram.in,http://localhost:5173,http://localhost:5175
+ALLOWED_ORIGINS=https://www.zaxgram.com,http://localhost:5173,http://localhost:5175
 ```
 
 ### Frontend (.env Already Correct)
@@ -487,7 +487,7 @@ FRONTEND_URL=https://your-actual-frontend-url.com
 
 1. **Update Backend .env:**
    ```env
-   FRONTEND_URL=https://www.zexgram.in
+   FRONTEND_URL=https://www.zaxgram.com
    EMAIL_USER=nitinchouhan@gmail.com
    EMAIL_PASSWORD=your-16-char-app-password
    ```

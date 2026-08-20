@@ -155,7 +155,7 @@ POST /auth/forgot-password
 **Email Sent:**
 - Subject: "Reset Your Password - Zexgram"
 - Contains a clickable button with reset link
-- Link format: `https://www.zexgram.in/reset-password?token=abc123xyz`
+- Link format: `https://www.zaxgram.com/reset-password?token=abc123xyz`
 - Professional HTML email template with styling
 - Link expires in 1 hour
 - Link can only be used once

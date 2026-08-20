@@ -8,7 +8,7 @@
 FRONTEND_URL="https://sexplayrraiwayservarplaystore-production.up.railway.app"
 
 # Should be (CORRECT):
-FRONTEND_URL="https://www.zexgram.in"
+FRONTEND_URL="https://www.zaxgram.com"
 ```
 
 **Why:** Password reset emails mein wrong link ja raha hai. Backend ki URL nahi, frontend ki URL chahiye.
@@ -70,8 +70,8 @@ R2_PUBLIC_BASE_URL=https://pub-11c2b603246a4f87b285e337ee6ad598.r2.dev
 R2_REGION=auto
 
 # CORS Configuration
-CORS_ORIGIN=https://www.zexgram.in,http://localhost:5173,http://localhost:5175
-ALLOWED_ORIGINS=https://www.zexgram.in,http://localhost:5173,http://localhost:5175
+CORS_ORIGIN=https://www.zaxgram.com,http://localhost:5173,http://localhost:5175
+ALLOWED_ORIGINS=https://www.zaxgram.com,http://localhost:5173,http://localhost:5175
 
 # Telegram Bot
 TELEGRAM_BOT_ENABLED=true
@@ -147,9 +147,9 @@ Agar `zexgram@gmail.com` ka password invalid hai, toh naya setup karo:
 3. Find and update these 3 variables:
 
 ```
-FRONTEND_URL = https://www.zexgram.in
+FRONTEND_URL = https://www.zaxgram.com
 DEFAULT_EARNINGS_PER_VIEW = 0.001
-ALLOWED_ORIGINS = https://www.zexgram.in,http://localhost:5173,http://localhost:5175
+ALLOWED_ORIGINS = https://www.zaxgram.com,http://localhost:5173,http://localhost:5175
 ```
 
 ### Step 3: Optional - Update Email
@@ -168,7 +168,7 @@ Railway will automatically redeploy after variable changes. Wait ~2-3 minutes.
 
 ### Step 5: Test
 
-1. Go to frontend: https://www.zexgram.in
+1. Go to frontend: https://www.zaxgram.com
 2. Click "Forgot Password?"
 3. Enter email: `nobifly@gmail.com`
 4. Check Railway logs for success/error
