@@ -209,7 +209,7 @@ const uploadTelegramVideo = async ({ userId, fileId, fileUniqueId, title, mimeTy
     type: VIDEO_TYPE.DIRECT_UPLOAD,
     storageKey,
     fileName: title,
-    mimeType: mimeType || 'video/mp4',
+    mimeType: 'video/mp4',  // always mp4 after transcode regardless of source
     fileSize: uploadedSize,
     status: VIDEO_STATUS.READY,
     telegramFileUniqueId: fileUniqueId || undefined,
