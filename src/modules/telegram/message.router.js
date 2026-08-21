@@ -217,26 +217,18 @@ const _handleClipNovaLink = async (ctx, session, shortCode, pendingThumb) => {
     });
 
     const thumbUrl = video.thumbnailUrl || process.env.DEFAULT_THUMBNAIL_URL || null;
-
-    // Strip URLs from caption to prevent OG preview on sendPhoto
-    const fullCaption = message || (wasAlreadyOwned
-      ? `🔁 You already have this video!\n\n🎬 ${video.title}`
-      : `✅ Upload Complete\n\n🎬 ${video.title}`);
-    const captionNoUrl = fullCaption.replace(/https?:\/\/\S+/g, '').replace(/\n{3,}/g, '\n\n').trim();
+    const caption = message || (wasAlreadyOwned
+      ? `🔁 You already have this video!\n\n🎬 ${video.title}\n🔗 ${shareUrl}`
+      : `✅ Upload Complete\n\n🎬 ${video.title}\n🔗 ${shareUrl}`);
 
     await ctx.telegram.deleteMessage(chatId, ackMsg.message_id).catch(() => {});
 
     if (thumbUrl) {
-      await ctx.telegram.sendPhoto(chatId, thumbUrl, { caption: captionNoUrl }).catch(() =>
-        ctx.telegram.sendMessage(chatId, captionNoUrl, { disable_web_page_preview: true }).catch(() => {})
+      await ctx.telegram.sendPhoto(chatId, thumbUrl, { caption, disable_web_page_preview: true }).catch(() =>
+        ctx.telegram.sendMessage(chatId, caption, { disable_web_page_preview: true }).catch(() => {})
       );
     } else {
-      await ctx.telegram.sendMessage(chatId, captionNoUrl, { disable_web_page_preview: true }).catch(() => {});
-    }
-
-    // Send link as separate message — no preview
-    if (shareUrl) {
-      await ctx.telegram.sendMessage(chatId, `🔗 ${shareUrl}`, { disable_web_page_preview: true }).catch(() => {});
+      await ctx.telegram.sendMessage(chatId, caption, { disable_web_page_preview: true }).catch(() => {});
     }
 
   } catch (err) {
