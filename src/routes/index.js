@@ -42,7 +42,7 @@ router.use('/fraud', fraudRoutes);
 router.get('/health', (req, res) => {
   const base = {
     success: true,
-    message: 'Server is running',
+    message: 'Backend is healthy and running',
     data: {
       timestamp: new Date().toISOString(),
       database: {
