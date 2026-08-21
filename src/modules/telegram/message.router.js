@@ -8,7 +8,7 @@ const Link = require('../links/link.model');
 const logger = require('../../config/logger');
 const telegramConfig = require('../../config/telegram');
 
-const FRONTEND_URL = process.env.FRONTEND_URL || process.env.APP_URL || 'https://www.zaxgram.com';
+const FRONTEND_URL = (process.env.FRONTEND_URL || process.env.APP_URL || 'https://www.zaxgram.com').replace(/\/$/, '');
 const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
 
 // Use Local Bot API base URL if configured, otherwise standard API
@@ -217,12 +217,27 @@ const _handleClipNovaLink = async (ctx, session, shortCode, pendingThumb) => {
     });
 
     const thumbUrl = video.thumbnailUrl || process.env.DEFAULT_THUMBNAIL_URL || null;
-    const caption = message || (wasAlreadyOwned
-      ? `🔁 You already have this video!\n\n🎬 ${video.title}\n🔗 ${shareUrl}`
-      : `✅ Upload Complete\n\n🎬 ${video.title}\n🔗 ${shareUrl}`);
+
+    // Strip URLs from caption to prevent OG preview on sendPhoto
+    const fullCaption = message || (wasAlreadyOwned
+      ? `🔁 You already have this video!\n\n🎬 ${video.title}`
+      : `✅ Upload Complete\n\n🎬 ${video.title}`);
+    const captionNoUrl = fullCaption.replace(/https?:\/\/\S+/g, '').replace(/\n{3,}/g, '\n\n').trim();
 
     await ctx.telegram.deleteMessage(chatId, ackMsg.message_id).catch(() => {});
-    await safeSendPhoto(ctx, chatId, thumbUrl, caption);
+
+    if (thumbUrl) {
+      await ctx.telegram.sendPhoto(chatId, thumbUrl, { caption: captionNoUrl }).catch(() =>
+        ctx.telegram.sendMessage(chatId, captionNoUrl, { disable_web_page_preview: true }).catch(() => {})
+      );
+    } else {
+      await ctx.telegram.sendMessage(chatId, captionNoUrl, { disable_web_page_preview: true }).catch(() => {});
+    }
+
+    // Send link as separate message — no preview
+    if (shareUrl) {
+      await ctx.telegram.sendMessage(chatId, `🔗 ${shareUrl}`, { disable_web_page_preview: true }).catch(() => {});
+    }
 
   } catch (err) {
     logger.error({ err, shortCode }, 'MessageRouter: ClipNova duplication failed');

@@ -16,7 +16,7 @@ const Video = require('../videos/video.model');
 const Link = require('../links/link.model');
 const { VIDEO_STATUS } = require('../../common/enums');
 
-const FRONTEND_URL = process.env.FRONTEND_URL || process.env.APP_URL || 'https://www.zaxgram.com';
+const FRONTEND_URL = (process.env.FRONTEND_URL || process.env.APP_URL || 'https://www.zaxgram.com').replace(/\/$/, '');
 
 /* ─── No web preview helper ─────────────────────────────────────────────── */
 // Merges disable_web_page_preview into any extra options passed to ctx.reply
@@ -216,17 +216,23 @@ class TelegramBotService {
   async _onStart(ctx) {
     clearSession(ctx.chat.id);
 
+    // Show persistent menu keyboard
+    const menuKeyboard = Markup.keyboard([
+      ['/login', '/videos'],
+      ['/settings', '/imports'],
+      ['/help', '/contact']
+    ]).resize().persistent();
+
     await ctx.reply(
       '👋 Welcome to Zexgram Bot!\n\n' +
       'Monetize your videos and track earnings.\n\n' +
       '📌 Quick Start:\n' +
-      '1. Click menu button (☰) below and select "Login"\n' +
+      '1. Use /login to connect your account\n' +
       '2. Forward any video directly to this bot\n' +
       '3. Bot uploads to R2 and gives you a share link\n' +
       '4. Share the link — earn on every view!\n\n' +
-      '💡 Tip: Send a photo BEFORE a video to set a custom thumbnail!\n\n' +
-      '🌐 Website: ' + FRONTEND_URL,
-      noPreview()
+      '💡 Tip: Send a photo BEFORE a video to set a custom thumbnail!',
+      { disable_web_page_preview: true, ...menuKeyboard }
     );
   }
 
