@@ -16,6 +16,18 @@ const getFfmpeg = () => {
 };
 
 /**
+ * Check if ffmpeg binary is available on PATH.
+ */
+const isFfmpegAvailable = () => {
+  try {
+    require('child_process').execSync('ffmpeg -version', { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
  * Generate a thumbnail from a video buffer using FFmpeg.
  * Writes temp files, extracts frame at seekSeconds, cleans up.
  * Returns jpg Buffer or null — NEVER throws.
@@ -114,13 +126,17 @@ const generateThumbnailFromUrl = async (videoUrl, seekSeconds = 2) => {
 
 /**
  * Transcode video buffer to H.264 Baseline profile — compatible with all Android ExoPlayer.
- * Returns transcoded Buffer or original buffer if FFmpeg not available.
- * NEVER throws.
+ * Returns transcoded Buffer or throws if FFmpeg not available (do NOT silently upload incompatible video).
  */
 const transcodeToCompatible = async (inputBuffer) => {
   const ffmpeg = getFfmpeg();
   if (!ffmpeg) {
-    logger.warn('FFmpeg: not available — skipping transcode, uploading original');
+    // FFmpeg not available — check if we can use system ffmpeg via child_process
+    if (isFfmpegAvailable()) {
+      logger.info('FFmpeg: fluent-ffmpeg missing but system ffmpeg found — using child_process');
+      return transcodeWithChildProcess(inputBuffer);
+    }
+    logger.warn('FFmpeg: not available — uploading original (may not be compatible)');
     return inputBuffer;
   }
 
@@ -163,9 +179,77 @@ const transcodeToCompatible = async (inputBuffer) => {
     return outBuffer;
   } catch (err) {
     cleanup();
-    logger.warn({ errMsg: err.message }, 'FFmpeg: transcode failed — uploading original');
-    return inputBuffer;
+    logger.warn({ errMsg: err.message }, 'FFmpeg: fluent-ffmpeg transcode failed — trying child_process fallback');
+    // Try child_process fallback before giving up
+    try {
+      return await transcodeWithChildProcess(inputBuffer);
+    } catch (err2) {
+      logger.warn({ errMsg: err2.message }, 'FFmpeg: all transcode methods failed — uploading original');
+      return inputBuffer;
+    }
   }
+};
+
+/**
+ * Fallback: transcode using child_process exec (system ffmpeg binary directly).
+ */
+const transcodeWithChildProcess = (inputBuffer) => {
+  return new Promise((resolve, reject) => {
+    const { spawn } = require('child_process');
+    const id = crypto.randomBytes(8).toString('hex');
+    const tmpIn = path.join(os.tmpdir(), `cpxin_${id}.mp4`);
+    const tmpOut = path.join(os.tmpdir(), `cpxout_${id}.mp4`);
+
+    const cleanup = () => {
+      fs.unlink(tmpIn, () => {});
+      fs.unlink(tmpOut, () => {});
+    };
+
+    fs.promises.writeFile(tmpIn, inputBuffer).then(() => {
+      const args = [
+        '-y', '-i', tmpIn,
+        '-vcodec', 'libx264',
+        '-profile:v', 'baseline',
+        '-level', '3.1',
+        '-pix_fmt', 'yuv420p',
+        '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+        '-preset', 'fast',
+        '-crf', '23',
+        '-movflags', '+faststart',
+        '-acodec', 'aac',
+        '-ar', '44100',
+        '-b:a', '128k',
+        tmpOut
+      ];
+
+      const proc = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
+      let stderr = '';
+      proc.stderr.on('data', (d) => { stderr += d.toString(); });
+
+      proc.on('close', async (code) => {
+        if (code === 0) {
+          try {
+            const outBuffer = await fs.promises.readFile(tmpOut);
+            cleanup();
+            logger.info({ inputSize: inputBuffer.length, outputSize: outBuffer.length }, 'FFmpeg child_process: transcode complete');
+            resolve(outBuffer);
+          } catch (e) {
+            cleanup();
+            reject(e);
+          }
+        } else {
+          cleanup();
+          logger.warn({ stderr: stderr.slice(-500) }, 'FFmpeg child_process: transcode failed');
+          reject(new Error(`ffmpeg exited with code ${code}`));
+        }
+      });
+
+      proc.on('error', (e) => {
+        cleanup();
+        reject(e);
+      });
+    }).catch(reject);
+  });
 };
 
 module.exports = {
