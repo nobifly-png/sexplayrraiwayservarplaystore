@@ -8,7 +8,7 @@ const Link = require('../links/link.model');
 const logger = require('../../config/logger');
 const telegramConfig = require('../../config/telegram');
 
-const FRONTEND_URL = process.env.FRONTEND_URL || process.env.APP_URL || 'https://zaxgram.com';
+const FRONTEND_URL = process.env.FRONTEND_URL || process.env.APP_URL || 'https://www.zaxgram.com';
 const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
 
 // Use Local Bot API base URL if configured, otherwise standard API
@@ -87,7 +87,8 @@ const safeSendPhoto = async (ctx, chatId, thumbUrl, caption) => {
       logger.warn({ errMsg: err.message }, 'MessageRouter: sendPhoto failed, falling back to sendMessage');
     }
   }
-  await ctx.telegram.sendMessage(chatId, caption).catch(() => {});
+  // No thumbnail — send text only, with preview disabled so OG image doesn't show
+  await ctx.telegram.sendMessage(chatId, caption, { disable_web_page_preview: true }).catch(() => {});
 };
 
 /* ─── MASTER ROUTER ──────────────────────────────────────────────────────── */
@@ -299,8 +300,8 @@ const _handleExternalLink = async (ctx, session, detected, ingestService, linkSe
       const shareLink = await linkService.createLink(session.userId, result.video._id.toString()).catch(() => null);
       const shareUrl = shareLink ? `${FRONTEND_URL}/watch/${shareLink.shortCode}` : null;
       const reply = `✅ Imported!\n\n📹 ${result.video.title}\n${shareUrl ? `🔗 ${shareUrl}` : ''}`;
-      await ctx.telegram.editMessageText(chatId, ackMsg.message_id, undefined, reply, {})
-        .catch(() => ctx.reply(reply).catch(() => {}));
+      await ctx.telegram.editMessageText(chatId, ackMsg.message_id, undefined, reply, { disable_web_page_preview: true })
+        .catch(() => ctx.reply(reply, { disable_web_page_preview: true }).catch(() => {}));
 
     } else if (result.status === INGEST_STATUS.DUPLICATE) {
       const existingVideo = result.job?.videoId
@@ -312,8 +313,8 @@ const _handleExternalLink = async (ctx, session, detected, ingestService, linkSe
       } else {
         dupMsg += 'Use /videos to find your link.';
       }
-      await ctx.telegram.editMessageText(chatId, ackMsg.message_id, undefined, dupMsg, {})
-        .catch(() => ctx.reply(dupMsg).catch(() => {}));
+      await ctx.telegram.editMessageText(chatId, ackMsg.message_id, undefined, dupMsg, { disable_web_page_preview: true })
+        .catch(() => ctx.reply(dupMsg, { disable_web_page_preview: true }).catch(() => {}));
 
     } else {
       await ctx.telegram.editMessageText(chatId, ackMsg.message_id, undefined,

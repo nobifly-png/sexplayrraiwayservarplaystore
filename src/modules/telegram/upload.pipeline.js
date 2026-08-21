@@ -16,7 +16,7 @@ const { generateThumbnailFromUrl, transcodeToCompatible } = require('./ffmpeg.se
 const logger = require('../../config/logger');
 const telegramConfig = require('../../config/telegram');
 
-const FRONTEND_URL = process.env.FRONTEND_URL || process.env.APP_URL || 'https://zaxgram.com';
+const FRONTEND_URL = process.env.FRONTEND_URL || process.env.APP_URL || 'https://www.zaxgram.com';
 
 /* ─── Format message with header/footer ────────────────────────────────── */
 const formatMessageWithHeaderFooter = async (userId, shareUrl, videoTitle) => {

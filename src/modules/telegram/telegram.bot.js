@@ -16,7 +16,11 @@ const Video = require('../videos/video.model');
 const Link = require('../links/link.model');
 const { VIDEO_STATUS } = require('../../common/enums');
 
-const FRONTEND_URL = process.env.FRONTEND_URL || process.env.APP_URL || 'https://zaxgram.com';
+const FRONTEND_URL = process.env.FRONTEND_URL || process.env.APP_URL || 'https://www.zaxgram.com';
+
+/* ─── No web preview helper ─────────────────────────────────────────────── */
+// Merges disable_web_page_preview into any extra options passed to ctx.reply
+const noPreview = (extra = {}) => ({ disable_web_page_preview: true, ...extra });
 
 /* ─── Session Store ─────────────────────────────────────────────────────── */
 const MAX_SESSIONS = 5000;
@@ -79,9 +83,9 @@ class TelegramBotService {
         botOptions.telegram = {
           apiRoot: telegramConfig.localApiUrl
         };
-        logger.info({ 
-          useLocalApi: true, 
-          apiRoot: telegramConfig.localApiUrl 
+        logger.info({
+          useLocalApi: true,
+          apiRoot: telegramConfig.localApiUrl
         }, 'Using Local Bot API server for large file support (up to 2GB)');
       } else {
         logger.info('Using standard Telegram Bot API (files limited to 20MB)');
@@ -135,8 +139,7 @@ class TelegramBotService {
 
   async _setBotMenuCommands() {
     try {
-      // Set menu commands that appear in bot menu (hamburger icon)
-      await this.bot.telegram.setMyCommands([
+      const commands = [
         { command: 'login', description: '🔑 Login to your account' },
         { command: 'settings', description: '⚙️ Header & Footer settings' },
         { command: 'help', description: 'ℹ️ Show help and commands' },
@@ -144,7 +147,12 @@ class TelegramBotService {
         { command: 'imports', description: '📥 Recent import jobs' },
         { command: 'contact', description: '📞 Contact Us' },
         { command: 'logout', description: '🚪 Logout from account' }
-      ]);
+      ];
+
+      // Set default scope (all private chats) — this is what shows the menu button
+      await this.bot.telegram.setMyCommands(commands, { scope: { type: 'all_private_chats' } });
+      // Also set default scope (fallback)
+      await this.bot.telegram.setMyCommands(commands);
       logger.info('Bot menu commands set successfully');
     } catch (err) {
       logger.error({ errMsg: err.message }, 'Failed to set bot menu commands');
@@ -207,7 +215,7 @@ class TelegramBotService {
   /* ─── /start ──────────────────────────────────────────────────────────── */
   async _onStart(ctx) {
     clearSession(ctx.chat.id);
-    
+
     await ctx.reply(
       '👋 Welcome to Zexgram Bot!\n\n' +
       'Monetize your videos and track earnings.\n\n' +
@@ -217,7 +225,8 @@ class TelegramBotService {
       '3. Bot uploads to R2 and gives you a share link\n' +
       '4. Share the link — earn on every view!\n\n' +
       '💡 Tip: Send a photo BEFORE a video to set a custom thumbnail!\n\n' +
-      '🌐 Website: ' + FRONTEND_URL
+      '🌐 Website: ' + FRONTEND_URL,
+      noPreview()
     );
   }
 
@@ -238,7 +247,8 @@ class TelegramBotService {
       '• Send a Zexgram /watch/ link → duplicate to your account\n' +
       '• Send TeraBox/Dailymotion links → import as external ref\n' +
       '• Send a photo FIRST → sets thumbnail for next upload\n\n' +
-      '/cancel — Cancel current action'
+      '/cancel — Cancel current action',
+      noPreview()
     );
   }
 
@@ -293,7 +303,7 @@ class TelegramBotService {
       return `${i + 1}. ${v.title}\n📊 ${v.status}${watchLine}`;
     }));
 
-    await ctx.reply(`🎬 Your Videos\n\n${lines.join('\n\n')}`);
+    await ctx.reply(`🎬 Your Videos\n\n${lines.join('\n\n')}`, noPreview());
   }
 
   /* ─── /imports ────────────────────────────────────────────────────────── */
@@ -326,28 +336,28 @@ class TelegramBotService {
     try {
       const link = await linkService.createLink(session.userId, videoId);
       const shareUrl = `${FRONTEND_URL}/watch/${link.shortCode}`;
-      
+
       // Get user settings for header/footer
       const user = await User.findById(session.userId);
       let message = '✅ Share Link Created!\n\n';
-      
+
       if (user.headerEnabled && user.telegramHeader) {
         message += `${user.telegramHeader}\n\n`;
       }
-      
+
       message += `🔗 ${shareUrl}`;
-      
+
       if (user.footerEnabled && user.telegramFooter) {
         message += `\n\n${user.telegramFooter}`;
       }
-      
-      await ctx.reply(message);
+
+      await ctx.reply(message, noPreview());
     } catch (err) {
       await ctx.reply(`❌ ${err.message}`);
     }
   }
 
-  /* ─── /settings ────────────────────────────────────────────────────────── */
+  /* ─── /settings ─────────────────────────────────────────────────────────── */
   async _onSettings(ctx) {
     const session = getSession(ctx.chat.id);
     if (!session.userId) return ctx.reply('Please /login first.');
@@ -355,18 +365,12 @@ class TelegramBotService {
     await this._showSettingsMenu(ctx, session.userId);
   }
 
-  /* ─── /contact ─────────────────────────────────────────────────────────── */
+  /* ─── /contact ──────────────────────────────────────────────────────────── */
   async _onContact(ctx) {
     const keyboard = Markup.inlineKeyboard([
-      [
-        Markup.button.url('📢 New Updates', 'https://t.me/+bjnJaxlgdvxkM2Vl')
-      ],
-      [
-        Markup.button.url('💬 Telegram Support', 'https://t.me/zexgram_support')
-      ],
-      [
-        Markup.button.url('🌐 Visit Website', FRONTEND_URL)
-      ]
+      [Markup.button.url('📢 New Updates', 'https://t.me/+bjnJaxlgdvxkM2Vl')],
+      [Markup.button.url('💬 Telegram Support', 'https://t.me/zexgram_support')],
+      [Markup.button.url('🌐 Visit Website', FRONTEND_URL)]
     ]);
 
     await ctx.reply(
@@ -375,47 +379,37 @@ class TelegramBotService {
       '💬 Telegram Support: t.me/zexgram_support\n' +
       '🌐 Website: ' + FRONTEND_URL + '\n\n' +
       'Click buttons below to visit:',
-      keyboard
+      noPreview(keyboard)
     );
   }
 
   async _showSettingsMenu(ctx, userId) {
     const user = await User.findById(userId);
-    
+
     const headerStatus = user.headerEnabled ? '✅ Enabled' : '❌ Disabled';
     const footerStatus = user.footerEnabled ? '✅ Enabled' : '❌ Disabled';
-    
+
     const keyboard = Markup.inlineKeyboard([
-      [
-        Markup.button.callback(
-          `📄 Header: ${headerStatus}`, 
-          'toggle_header'
-        )
-      ],
-      [
-        Markup.button.callback(
-          `📝 Footer: ${footerStatus}`, 
-          'toggle_footer'
-        )
-      ],
+      [Markup.button.callback(`📄 Header: ${headerStatus}`, 'toggle_header')],
+      [Markup.button.callback(`📝 Footer: ${footerStatus}`, 'toggle_footer')],
       [
         Markup.button.callback('✏️ Set Header Text', 'set_header'),
         Markup.button.callback('✏️ Set Footer Text', 'set_footer')
       ]
     ]);
-    
-    const message = 
+
+    const message =
       '⚙️ Header & Footer Settings\n\n' +
       `Current Header: ${headerStatus}\n` +
       `${user.telegramHeader || '(not set)'}\n\n` +
       `Current Footer: ${footerStatus}\n` +
       `${user.telegramFooter || '(not set)'}\n\n` +
       '💡 Header/Footer will be automatically added to all your video uploads!';
-    
+
     if (ctx.callbackQuery) {
-      await ctx.editMessageText(message, keyboard);
+      await ctx.editMessageText(message, { disable_web_page_preview: true, ...keyboard });
     } else {
-      await ctx.reply(message, keyboard);
+      await ctx.reply(message, noPreview(keyboard));
     }
   }
 
@@ -430,11 +424,11 @@ class TelegramBotService {
     await ctx.answerCbQuery();
     const session = getSession(ctx.chat.id);
     if (!session.userId) return;
-    
+
     const user = await User.findById(session.userId);
     user.headerEnabled = !user.headerEnabled;
     await user.save();
-    
+
     await this._showSettingsMenu(ctx, session.userId);
   }
 
@@ -442,11 +436,11 @@ class TelegramBotService {
     await ctx.answerCbQuery();
     const session = getSession(ctx.chat.id);
     if (!session.userId) return;
-    
+
     const user = await User.findById(session.userId);
     user.footerEnabled = !user.footerEnabled;
     await user.save();
-    
+
     await this._showSettingsMenu(ctx, session.userId);
   }
 
@@ -454,7 +448,7 @@ class TelegramBotService {
     await ctx.answerCbQuery('Enter header text...');
     const session = getSession(ctx.chat.id);
     if (!session.userId) return;
-    
+
     setSession(ctx.chat.id, { state: STATES.AWAIT_HEADER });
     await ctx.reply('✏️ Enter header text (e.g., channel name, backup link):\n\nSend /cancel to cancel.');
   }
@@ -463,7 +457,7 @@ class TelegramBotService {
     await ctx.answerCbQuery('Enter footer text...');
     const session = getSession(ctx.chat.id);
     if (!session.userId) return;
-    
+
     setSession(ctx.chat.id, { state: STATES.AWAIT_FOOTER });
     await ctx.reply('✏️ Enter footer text (e.g., backup channel link):\n\nSend /cancel to cancel.');
   }

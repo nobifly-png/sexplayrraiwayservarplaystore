@@ -29,9 +29,11 @@ const DEFAULT_THUMBNAIL_URL = process.env.DEFAULT_THUMBNAIL_URL || null;
 /**
  * Send per-video result as its own Telegram message.
  * Uses sendPhoto if thumbnail available, falls back to sendMessage.
+ * Preview is always disabled to prevent OG image cards.
  */
 const sendVideoResult = async (ctx, chatId, result) => {
   await sleep(INTER_MSG_DELAY_MS);
+  const NO_PREVIEW = { disable_web_page_preview: true };
   try {
     if (result.skipped) {
       const msg = result.message || (result.shareUrl
@@ -40,10 +42,10 @@ const sendVideoResult = async (ctx, chatId, result) => {
       const photoUrl = result.thumbnailUrl || DEFAULT_THUMBNAIL_URL;
       if (photoUrl && result.shareUrl) {
         await ctx.telegram.sendPhoto(chatId, photoUrl, { caption: msg }).catch(() =>
-          ctx.telegram.sendMessage(chatId, msg).catch(() => {})
+          ctx.telegram.sendMessage(chatId, msg, NO_PREVIEW).catch(() => {})
         );
       } else {
-        await ctx.telegram.sendMessage(chatId, msg).catch(() => {});
+        await ctx.telegram.sendMessage(chatId, msg, NO_PREVIEW).catch(() => {});
       }
     } else if (result.success !== false) {
       const caption = result.message || (
@@ -54,10 +56,10 @@ const sendVideoResult = async (ctx, chatId, result) => {
       const photoUrl = result.thumbnailUrl || DEFAULT_THUMBNAIL_URL;
       if (photoUrl) {
         await ctx.telegram.sendPhoto(chatId, photoUrl, { caption }).catch(() =>
-          ctx.telegram.sendMessage(chatId, caption).catch(() => {})
+          ctx.telegram.sendMessage(chatId, caption, NO_PREVIEW).catch(() => {})
         );
       } else {
-        await ctx.telegram.sendMessage(chatId, caption).catch(() => {});
+        await ctx.telegram.sendMessage(chatId, caption, NO_PREVIEW).catch(() => {});
       }
     } else {
       await ctx.telegram.sendMessage(chatId, `❌ Upload failed: ${result.error || 'Unknown error'}`).catch(() => {});
