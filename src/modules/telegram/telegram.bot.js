@@ -216,13 +216,7 @@ class TelegramBotService {
   async _onStart(ctx) {
     clearSession(ctx.chat.id);
 
-    // Show persistent menu keyboard
-    const menuKeyboard = Markup.keyboard([
-      ['/login', '/videos'],
-      ['/settings', '/imports'],
-      ['/help', '/contact']
-    ]).resize().persistent();
-
+    // Remove any existing reply keyboard
     await ctx.reply(
       '👋 Welcome to Zexgram Bot!\n\n' +
       'Monetize your videos and track earnings.\n\n' +
@@ -232,7 +226,7 @@ class TelegramBotService {
       '3. Bot uploads to R2 and gives you a share link\n' +
       '4. Share the link — earn on every view!\n\n' +
       '💡 Tip: Send a photo BEFORE a video to set a custom thumbnail!',
-      { disable_web_page_preview: true, ...menuKeyboard }
+      { disable_web_page_preview: true, ...Markup.removeKeyboard() }
     );
   }
 
