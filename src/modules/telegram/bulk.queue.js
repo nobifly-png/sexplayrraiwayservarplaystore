@@ -28,8 +28,7 @@ const DEFAULT_THUMBNAIL_URL = process.env.DEFAULT_THUMBNAIL_URL || null;
 
 /**
  * Send per-video result as its own Telegram message.
- * Photo sent without link in caption to prevent OG preview cards.
- * Link sent as separate message with preview disabled.
+ * Photo + caption with link included in single message.
  */
 const sendVideoResult = async (ctx, chatId, result) => {
   await sleep(INTER_MSG_DELAY_MS);
@@ -37,50 +36,48 @@ const sendVideoResult = async (ctx, chatId, result) => {
   try {
     if (result.skipped) {
       const photoUrl = result.thumbnailUrl || DEFAULT_THUMBNAIL_URL;
-      const linkText = result.shareUrl ? `🔗 ${result.shareUrl}` : 'Use /videos to find your link.';
-      const caption = result.message
-        ? result.message.replace(/https?:\/\/\S+/g, '').trim()  // strip URLs from caption
-        : '✅ Already Imported';
+      const baseCaption = result.message || '✅ Already Imported';
+      // Add link to caption if exists
+      const fullCaption = result.shareUrl 
+        ? `${baseCaption}\n\n🔗 ${result.shareUrl}`
+        : `${baseCaption}\n\nUse /videos to find your link.`;
 
       if (photoUrl) {
-        await ctx.telegram.sendPhoto(chatId, photoUrl, { caption }).catch(() =>
-          ctx.telegram.sendMessage(chatId, caption, NO_PREVIEW).catch(() => {})
+        await ctx.telegram.sendPhoto(chatId, photoUrl, { 
+          caption: fullCaption,
+          ...NO_PREVIEW 
+        }).catch(() =>
+          ctx.telegram.sendMessage(chatId, fullCaption, NO_PREVIEW).catch(() => {})
         );
-        if (result.shareUrl) {
-          await sleep(200);
-          await ctx.telegram.sendMessage(chatId, linkText, NO_PREVIEW).catch(() => {});
-        }
       } else {
-        const fullMsg = result.message || `✅ Already Imported\n\n${linkText}`;
-        await ctx.telegram.sendMessage(chatId, fullMsg, NO_PREVIEW).catch(() => {});
+        await ctx.telegram.sendMessage(chatId, fullCaption, NO_PREVIEW).catch(() => {});
       }
 
     } else if (result.success !== false) {
       const photoUrl = result.thumbnailUrl || DEFAULT_THUMBNAIL_URL;
 
-      // Build caption WITHOUT the link to prevent OG preview
-      let caption;
+      // Build caption with link included
+      let baseCaption;
       if (result.message) {
-        // Strip URLs from message for caption, send link separately
-        caption = result.message.replace(/https?:\/\/\S+/g, '').trim();
-        // Clean up trailing/extra newlines after URL removal
-        caption = caption.replace(/\n{3,}/g, '\n\n').trim();
+        baseCaption = result.message;
       } else {
-        caption = `✅ Upload Complete\n\n🎬 ${result.title}`;
+        baseCaption = `✅ Upload Complete\n\n🎬 ${result.title}`;
       }
+
+      // Add share link to caption
+      const fullCaption = result.shareUrl 
+        ? `${baseCaption}\n\n🔗 ${result.shareUrl}`
+        : baseCaption;
 
       if (photoUrl) {
-        await ctx.telegram.sendPhoto(chatId, photoUrl, { caption }).catch(() =>
-          ctx.telegram.sendMessage(chatId, caption, NO_PREVIEW).catch(() => {})
+        await ctx.telegram.sendPhoto(chatId, photoUrl, { 
+          caption: fullCaption,
+          ...NO_PREVIEW 
+        }).catch(() =>
+          ctx.telegram.sendMessage(chatId, fullCaption, NO_PREVIEW).catch(() => {})
         );
       } else {
-        await ctx.telegram.sendMessage(chatId, caption, NO_PREVIEW).catch(() => {});
-      }
-
-      // Send link as a separate plain text message — no preview
-      if (result.shareUrl) {
-        await sleep(200);
-        await ctx.telegram.sendMessage(chatId, `🔗 ${result.shareUrl}`, NO_PREVIEW).catch(() => {});
+        await ctx.telegram.sendMessage(chatId, fullCaption, NO_PREVIEW).catch(() => {});
       }
 
     } else {
