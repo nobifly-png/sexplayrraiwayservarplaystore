@@ -55,7 +55,10 @@ const getTelegramFileUrl = (botToken, fileId) =>
     const url = `${apiBase}/bot${botToken}/getFile?file_id=${fileId}`;
     logger.info({ apiBase, useLocalApi: !!useLocal, fileId }, 'Pipeline: fetching file info from Telegram API');
 
-    const req = https.get(url, { timeout: 30000 }, (res) => {
+    // Auto-detect http vs https based on URL
+    const protocol = url.startsWith('https') ? https : http;
+
+    const req = protocol.get(url, { timeout: 30000 }, (res) => {
       let data = '';
       res.on('data', (c) => { data += c; });
       res.on('end', () => {
