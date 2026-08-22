@@ -80,13 +80,28 @@ class TelegramBotService {
       // Configure bot options for Local Bot API (if enabled)
       const botOptions = {};
       if (telegramConfig.useLocalApi && telegramConfig.localApiUrl) {
+        // Strip trailing slash from local API URL
+        const localApiUrl = telegramConfig.localApiUrl.replace(/\/$/, '');
         botOptions.telegram = {
-          apiRoot: telegramConfig.localApiUrl
+          apiRoot: localApiUrl
         };
         logger.info({
           useLocalApi: true,
-          apiRoot: telegramConfig.localApiUrl
+          apiRoot: localApiUrl
         }, 'Using Local Bot API server for large file support (up to 2GB)');
+
+        // REQUIRED STEP: Bot must log out from Telegram cloud servers
+        // before it can use a local Bot API server.
+        // We attempt this once; if it fails (already logged out), we continue.
+        try {
+          const tempBot = new Telegraf(telegramConfig.botToken); // standard API temp bot
+          await tempBot.telegram.logOut();
+          logger.info('Bot logged out from standard Telegram API — switching to Local Bot API');
+        } catch (logoutErr) {
+          // "Unauthorized" or "not found" just means already logged out — safe to ignore
+          logger.warn({ err: logoutErr.message }, 'logOut attempt failed (may already be on local API) — continuing');
+        }
+
       } else {
         logger.info('Using standard Telegram Bot API (files limited to 20MB)');
       }

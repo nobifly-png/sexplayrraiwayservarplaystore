@@ -20,11 +20,14 @@ const getTelegramApiBase = () =>
 /* ─── Get Telegram file info with fallback ──────────────────────────────── */
 const _getPhotoFileInfo = async (botToken, fileId) => {
   const https = require('https');
+  const http = require('http');
   const useLocal = telegramConfig.useLocalApi && telegramConfig.localApiUrl;
-  const apiBase = useLocal ? telegramConfig.localApiUrl : 'https://api.telegram.org';
+  const apiBase = useLocal ? telegramConfig.localApiUrl.replace(/\/$/, '') : 'https://api.telegram.org';
 
   const tryFetch = (base) => new Promise((resolve, reject) => {
-    const req = https.get(`${base}/bot${botToken}/getFile?file_id=${fileId}`, { timeout: 15000 }, (res) => {
+    // Auto-detect protocol based on URL
+    const proto = base.startsWith('https') ? https : http;
+    const req = proto.get(`${base}/bot${botToken}/getFile?file_id=${fileId}`, { timeout: 15000 }, (res) => {
       let d = '';
       res.on('data', (c) => { d += c; });
       res.on('end', () => {
@@ -55,14 +58,18 @@ const _getPhotoFileInfo = async (botToken, fileId) => {
 const downloadTelegramPhoto = async (photoArray) => {
   try {
     const https = require('https');
+    const http = require('http');
     const photo = photoArray[photoArray.length - 1]; // highest resolution
     const botToken = telegramConfig.botToken;
 
     const { result: fileInfo, apiBase } = await _getPhotoFileInfo(botToken, photo.file_id);
     const downloadUrl = `${apiBase}/file/bot${botToken}/${fileInfo.file_path}`;
 
+    // Auto-detect protocol based on URL
+    const proto = downloadUrl.startsWith('https') ? https : http;
+
     const buffer = await new Promise((resolve, reject) => {
-      https.get(downloadUrl, (res) => {
+      proto.get(downloadUrl, (res) => {
         const chunks = [];
         res.on('data', (c) => chunks.push(c));
         res.on('end', () => resolve(Buffer.concat(chunks)));
