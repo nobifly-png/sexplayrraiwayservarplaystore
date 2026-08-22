@@ -243,28 +243,9 @@ const uploadTelegramVideo = async ({ userId, fileId, fileUniqueId, title, mimeTy
     }
   }
 
-  // Transcode to H.264 Baseline for ExoPlayer compatibility
-  logger.info({ size: rawBuffer.length }, 'Pipeline: transcoding to H.264 Baseline');
-  let videoBuffer;
-  try {
-    videoBuffer = await transcodeToCompatible(rawBuffer);
-    
-    // Verify transcode actually happened (transcoded should be smaller or similar size)
-    if (videoBuffer.length === rawBuffer.length && videoBuffer === rawBuffer) {
-      logger.error('Pipeline: transcode returned original buffer unchanged - FFmpeg likely failed');
-      throw new Error('Video transcoding failed. Please ensure video is in MP4/H.264 format or contact support.');
-    }
-    
-    logger.info({ originalSize: rawBuffer.length, transcodedSize: videoBuffer.length }, 'Pipeline: transcode successful');
-  } catch (err) {
-    logger.error({ err: err.message }, 'Pipeline: transcode failed');
-    throw new Error('Video format conversion failed. Please try a different video or contact support.');
-  }
-
-  // Upload transcoded buffer to R2
-  logger.info({ storageKey }, 'Pipeline: uploading to R2');
-  const { url: _u } = await uploadBufferToR2(videoBuffer, storageKey, 'video/mp4');
-  const uploadedSize = videoBuffer.length;
+  // Upload ORIGINAL video immediately to R2 - transcode later in background
+  logger.info({ storageKey, originalSize: rawBuffer.length }, 'Pipeline: uploading original to R2 (will transcode async)');
+  const { url: _u } = await uploadBufferToR2(rawBuffer, storageKey, 'video/mp4');
 
   const video = await Video.create({
     creatorId: userId,
@@ -273,15 +254,40 @@ const uploadTelegramVideo = async ({ userId, fileId, fileUniqueId, title, mimeTy
     type: VIDEO_TYPE.DIRECT_UPLOAD,
     storageKey,
     fileName: title,
-    mimeType: 'video/mp4',  // always mp4 after transcode regardless of source
-    fileSize: uploadedSize,
-    status: VIDEO_STATUS.READY,
+    mimeType: 'video/mp4',
+    fileSize: rawBuffer.length,
+    status: VIDEO_STATUS.READY,  // Mark ready immediately
     telegramFileUniqueId: fileUniqueId || undefined,
     uploadSource: 'TELEGRAM_DIRECT',
     createdViaBot: true
   });
 
-  logger.info({ videoId: video._id }, 'Pipeline: video record created');
+  logger.info({ videoId: video._id }, 'Pipeline: video record created, starting background transcode');
+
+  // Start background transcode - don't wait for it
+  (async () => {
+    try {
+      logger.info({ videoId: video._id, size: rawBuffer.length }, 'Background: transcoding to H.264 Baseline');
+      const transcodedBuffer = await transcodeToCompatible(rawBuffer);
+      
+      // Only replace if transcode actually worked
+      if (transcodedBuffer.length !== rawBuffer.length || transcodedBuffer !== rawBuffer) {
+        const transcodedKey = storageKey.replace(/\.mp4$/, '_transcoded.mp4');
+        await uploadBufferToR2(transcodedBuffer, transcodedKey, 'video/mp4');
+        
+        // Update video to use transcoded version
+        video.storageKey = transcodedKey;
+        video.fileSize = transcodedBuffer.length;
+        await video.save();
+        
+        logger.info({ videoId: video._id, originalSize: rawBuffer.length, transcodedSize: transcodedBuffer.length }, 'Background: transcode complete, video updated');
+      } else {
+        logger.warn({ videoId: video._id }, 'Background: transcode returned original - FFmpeg failed');
+      }
+    } catch (err) {
+      logger.error({ videoId: video._id, err: err.message }, 'Background: transcode failed, keeping original');
+    }
+  })().catch(() => {});  // Async fire-and-forget
 
   if (pendingThumb?.buffer) {
     await attachThumbnail(video, pendingThumb, null);
