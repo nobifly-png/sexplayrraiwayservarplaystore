@@ -181,21 +181,85 @@ const uploadTelegramVideo = async ({ userId, fileId, fileUniqueId, title, mimeTy
   const ext = (filePath || '').split('.').pop().replace(/[^a-zA-Z0-9]/g, '').slice(0, 8) || 'mp4';
   const storageKey = buildVideoStorageKey(userId, 'mp4'); // always mp4 after transcode
 
-  // Download video buffer
-  logger.info({ storageKey }, 'Pipeline: downloading from Telegram');
-  const rawBuffer = await new Promise((resolve, reject) => {
-    const proto = downloadUrl.startsWith('https') ? https : http;
-    proto.get(downloadUrl, { timeout: 120000 }, (res) => {
-      const chunks = [];
-      res.on('data', (c) => chunks.push(c));
-      res.on('end', () => resolve(Buffer.concat(chunks)));
-      res.on('error', reject);
-    }).on('error', reject).on('timeout', () => reject(new Error('Download timed out')));
-  });
+  // Download video buffer with retry logic (10 min timeout per attempt for large files)
+  logger.info({ storageKey, fileSize }, 'Pipeline: downloading from Telegram');
+  
+  let rawBuffer;
+  let attempt = 0;
+  const maxAttempts = 3;
+  const DOWNLOAD_TIMEOUT = 600000; // 10 minutes per attempt
+  
+  while (attempt < maxAttempts) {
+    attempt++;
+    try {
+      rawBuffer = await new Promise((resolve, reject) => {
+        const proto = downloadUrl.startsWith('https') ? https : http;
+        const req = proto.get(downloadUrl, { timeout: DOWNLOAD_TIMEOUT }, (res) => {
+          if (res.statusCode !== 200) {
+            return reject(new Error(`HTTP ${res.statusCode}`));
+          }
+          
+          const chunks = [];
+          let downloaded = 0;
+          
+          res.on('data', (chunk) => {
+            chunks.push(chunk);
+            downloaded += chunk.length;
+            // Log progress every 10MB
+            if (downloaded % (10 * 1024 * 1024) < chunk.length) {
+              logger.info({ downloaded: `${(downloaded / 1024 / 1024).toFixed(1)}MB` }, 'Pipeline: download progress');
+            }
+          });
+          
+          res.on('end', () => {
+            const buffer = Buffer.concat(chunks);
+            logger.info({ totalSize: `${(buffer.length / 1024 / 1024).toFixed(1)}MB` }, 'Pipeline: download complete');
+            resolve(buffer);
+          });
+          
+          res.on('error', reject);
+        });
+        
+        req.on('error', reject);
+        req.on('timeout', () => {
+          req.destroy();
+          reject(new Error('Download timed out after 10 minutes'));
+        });
+      });
+      
+      break; // Success, exit retry loop
+      
+    } catch (err) {
+      logger.warn({ attempt, maxAttempts, errMsg: err.message }, 'Pipeline: download attempt failed');
+      
+      if (attempt >= maxAttempts) {
+        throw new Error(`Download failed after ${maxAttempts} attempts: ${err.message}`);
+      }
+      
+      // Wait before retry (exponential backoff: 2s, 4s, 8s)
+      const delay = Math.min(2000 * Math.pow(2, attempt - 1), 8000);
+      logger.info({ delay, nextAttempt: attempt + 1 }, 'Pipeline: retrying download');
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
 
   // Transcode to H.264 Baseline for ExoPlayer compatibility
   logger.info({ size: rawBuffer.length }, 'Pipeline: transcoding to H.264 Baseline');
-  const videoBuffer = await transcodeToCompatible(rawBuffer);
+  let videoBuffer;
+  try {
+    videoBuffer = await transcodeToCompatible(rawBuffer);
+    
+    // Verify transcode actually happened (transcoded should be smaller or similar size)
+    if (videoBuffer.length === rawBuffer.length && videoBuffer === rawBuffer) {
+      logger.error('Pipeline: transcode returned original buffer unchanged - FFmpeg likely failed');
+      throw new Error('Video transcoding failed. Please ensure video is in MP4/H.264 format or contact support.');
+    }
+    
+    logger.info({ originalSize: rawBuffer.length, transcodedSize: videoBuffer.length }, 'Pipeline: transcode successful');
+  } catch (err) {
+    logger.error({ err: err.message }, 'Pipeline: transcode failed');
+    throw new Error('Video format conversion failed. Please try a different video or contact support.');
+  }
 
   // Upload transcoded buffer to R2
   logger.info({ storageKey }, 'Pipeline: uploading to R2');
