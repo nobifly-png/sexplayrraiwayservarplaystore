@@ -553,8 +553,25 @@ class TelegramBotService {
       "Now forward any video — I'll upload it to R2 and give you a share link automatically!\n\n" +
       '💡 Tip: Send a photo first to set a custom thumbnail.'
     );
-  }
 
 }
 
+// Export helper to get file download URL using bot's configured API (Local or Standard)
+const getBotFileLink = async (fileId) => {
+  const botService = module.exports;
+  if (!botService.bot) {
+    throw new Error('Telegram bot not initialized');
+  }
+  try {
+    // Telegraf's getFileLink automatically uses Local Bot API if configured
+    const fileLink = await botService.bot.telegram.getFileLink(fileId);
+    logger.info({ fileId, fileLink: fileLink.href }, 'BotService: got file link via Telegraf');
+    return fileLink.href;
+  } catch (err) {
+    logger.error({ err: err.message, fileId }, 'BotService: getFileLink failed');
+    throw err;
+  }
+};
+
 module.exports = new TelegramBotService();
+module.exports.getBotFileLink = getBotFileLink;

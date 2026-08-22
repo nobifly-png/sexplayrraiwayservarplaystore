@@ -220,9 +220,19 @@ const uploadTelegramVideo = async ({ userId, fileId, fileUniqueId, title, mimeTy
 
   logger.info({ userId, fileId, title }, 'Pipeline: Telegram direct upload started');
 
-  const { downloadUrl, filePath } = await getTelegramFileUrl(botToken, fileId);
-  const ext = (filePath || '').split('.').pop().replace(/[^a-zA-Z0-9]/g, '').slice(0, 8) || 'mp4';
-  const storageKey = buildVideoStorageKey(userId, 'mp4'); // always mp4 after transcode
+  // Use Telegraf's getFileLink which automatically uses Local Bot API if configured
+  const telegramBot = require('./telegram.bot');
+  let downloadUrl;
+  try {
+    downloadUrl = await telegramBot.getBotFileLink(fileId);
+    logger.info({ downloadUrl: downloadUrl.substring(0, 100) + '...' }, 'Pipeline: got download URL via Telegraf (respects Local API config)');
+  } catch (err) {
+    logger.error({ err: err.message }, 'Pipeline: failed to get file link via Telegraf');
+    throw new Error(`Failed to get file download link: ${err.message}`);
+  }
+
+  const ext = 'mp4'; // always mp4 after transcode
+  const storageKey = buildVideoStorageKey(userId, 'mp4');
 
   // Download video buffer with retry logic (10 min timeout per attempt for large files)
   logger.info({ storageKey, fileSize }, 'Pipeline: downloading from Telegram');
