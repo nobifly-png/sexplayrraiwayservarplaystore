@@ -11,7 +11,7 @@ const telegramConfig = {
   // Set TELEGRAM_USE_LOCAL_API=true and TELEGRAM_LOCAL_API_URL in .env
   // See TELEGRAM_LOCAL_BOT_SETUP.md for setup instructions
   useLocalApi: process.env.TELEGRAM_USE_LOCAL_API === 'true',
-  localApiUrl: process.env.TELEGRAM_LOCAL_API_URL || null
+  localApiUrl: (process.env.TELEGRAM_LOCAL_API_URL || '').trim().replace(/\/+$/, '') || null
 };
 
 module.exports = telegramConfig;

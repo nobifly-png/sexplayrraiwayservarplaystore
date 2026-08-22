@@ -69,17 +69,36 @@ const getTelegramFileUrl = (botToken, fileId) =>
             
             // Check if it's the "file is too big" error (20MB+ on standard API)
             if (errorMsg.includes('too big') || errorMsg.includes('file_too_large')) {
-              logger.error({ 
-                err: errorMsg,
-                fileId 
-              }, 'Pipeline: File exceeds 20MB limit on standard Telegram API');
-              return reject(new Error(
-                '❌ File too large! Standard Telegram API supports max 20MB.\n\n' +
-                '💡 Solutions:\n' +
-                '1. Use files under 20MB, OR\n' +
-                '2. Setup Local Bot API Server (supports up to 2GB)\n\n' +
-                'Contact admin for Local Bot API setup instructions.'
-              ));
+              // If Local Bot API returned "too big", it means local API isn't configured with --local flag
+              if (useLocal) {
+                logger.error({ 
+                  err: errorMsg,
+                  fileId,
+                  apiBase
+                }, 'Pipeline: Local Bot API returned "file too big" — likely missing TELEGRAM_LOCAL=true env var on the API server');
+                // Try standard API as fallback (will work for files ≤20MB)
+                logger.warn('Pipeline: Falling back to standard API for getFile');
+                return _getFileFromStandardApi(botToken, fileId).then(resolve).catch((fallbackErr) => {
+                  // Standard API also failed — file is genuinely >20MB and local API isn't working
+                  reject(new Error(
+                    '❌ File too large and Local Bot API is not working properly!\n\n' +
+                    '🔧 Admin: Add TELEGRAM_LOCAL=true to the telegram-bot-api service environment variables and redeploy.\n\n' +
+                    '💡 Without this, the Local Bot API only proxies to standard Telegram (20MB limit).'
+                  ));
+                });
+              } else {
+                logger.error({ 
+                  err: errorMsg,
+                  fileId 
+                }, 'Pipeline: File exceeds 20MB limit on standard Telegram API');
+                return reject(new Error(
+                  '❌ File too large! Standard Telegram API supports max 20MB.\n\n' +
+                  '💡 Solutions:\n' +
+                  '1. Use files under 20MB, OR\n' +
+                  '2. Setup Local Bot API Server (supports up to 2GB)\n\n' +
+                  'Contact admin for Local Bot API setup instructions.'
+                ));
+              }
             }
             
             // Log detailed error info
@@ -221,7 +240,7 @@ const uploadTelegramVideo = async ({ userId, fileId, fileUniqueId, title, mimeTy
   logger.info({ userId, fileId, title }, 'Pipeline: Telegram direct upload started');
 
   // Get download URL - use getTelegramFileUrl which handles Local Bot API with fallback
-  const { downloadUrl, fileSize: actualFileSize } = await getTelegramFileUrl(botToken, fileId);
+  const { downloadUrl, filePath: telegramFilePath, fileSize: actualFileSize } = await getTelegramFileUrl(botToken, fileId);
   logger.info({ downloadUrl: downloadUrl.substring(0, 100) + '...', fileSize: actualFileSize }, 'Pipeline: file download URL ready');
 
   const ext = 'mp4'; // always mp4 after transcode
@@ -230,32 +249,46 @@ const uploadTelegramVideo = async ({ userId, fileId, fileUniqueId, title, mimeTy
   // Download video buffer with retry logic (10 min timeout per attempt for large files)
   logger.info({ storageKey, fileSize }, 'Pipeline: downloading from Telegram');
   
+  // Check if we're using local API — needed for download fallback
+  const usingLocalApi = telegramConfig.useLocalApi && telegramConfig.localApiUrl;
+  
   let rawBuffer;
   let attempt = 0;
   const maxAttempts = 3;
   const DOWNLOAD_TIMEOUT = 600000; // 10 minutes per attempt
+  let currentDownloadUrl = downloadUrl;
+  let fellBackToStandard = false;
   
   while (attempt < maxAttempts) {
     attempt++;
     try {
       rawBuffer = await new Promise((resolve, reject) => {
-        const proto = downloadUrl.startsWith('https') ? https : http;
+        const proto = currentDownloadUrl.startsWith('https') ? https : http;
         
         logger.info({ 
           attempt, 
           maxAttempts, 
-          downloadUrl: downloadUrl.substring(0, 100) + '...', 
-          timeout: DOWNLOAD_TIMEOUT 
+          downloadUrl: currentDownloadUrl.substring(0, 100) + '...', 
+          timeout: DOWNLOAD_TIMEOUT,
+          fellBackToStandard
         }, 'Pipeline: starting download attempt');
         
-        const req = proto.get(downloadUrl, { timeout: DOWNLOAD_TIMEOUT }, (res) => {
+        const req = proto.get(currentDownloadUrl, { timeout: DOWNLOAD_TIMEOUT }, (res) => {
           if (res.statusCode !== 200) {
             logger.error({ 
               statusCode: res.statusCode, 
               attempt, 
-              downloadUrl: downloadUrl.substring(0, 100) + '...',
+              downloadUrl: currentDownloadUrl.substring(0, 100) + '...',
               headers: res.headers 
             }, 'Pipeline: download failed with non-200 status');
+            
+            // If local API returned 404, try standard API download URL
+            if (res.statusCode === 404 && usingLocalApi && !fellBackToStandard && telegramFilePath) {
+              logger.warn('Pipeline: Local API download returned 404 — will retry with standard Telegram API');
+              // Flag to switch URL on next retry
+              return reject(new Error('LOCAL_API_404'));
+            }
+            
             return reject(new Error(`HTTP ${res.statusCode}`));
           }
           
@@ -298,6 +331,25 @@ const uploadTelegramVideo = async ({ userId, fileId, fileUniqueId, title, mimeTy
       break; // Success, exit retry loop
       
     } catch (err) {
+      // Special case: Local API 404 — switch to standard API and retry immediately (don't count as a failed attempt)
+      if (err.message === 'LOCAL_API_404' && !fellBackToStandard) {
+        fellBackToStandard = true;
+        attempt--; // Don't count this as a failed attempt
+        
+        // Try to get the file from standard API first (to get proper file_path)
+        try {
+          const stdResult = await _getFileFromStandardApi(botToken, fileId);
+          currentDownloadUrl = stdResult.downloadUrl;
+          logger.info({ newDownloadUrl: currentDownloadUrl.substring(0, 100) + '...' }, 'Pipeline: switched to standard API download URL via fresh getFile');
+        } catch (stdErr) {
+          // Standard API getFile also failed (file >20MB) — construct URL from known file_path
+          currentDownloadUrl = `https://api.telegram.org/file/bot${botToken}/${telegramFilePath}`;
+          logger.info({ newDownloadUrl: currentDownloadUrl.substring(0, 100) + '...' }, 'Pipeline: constructed standard API download URL from file_path');
+        }
+        
+        continue;
+      }
+      
       logger.warn({ attempt, maxAttempts, errMsg: err.message, errDetail: err.toString() }, 'Pipeline: download attempt failed');
       
       if (attempt >= maxAttempts) {

@@ -82,24 +82,46 @@ class TelegramBotService {
       if (telegramConfig.useLocalApi && telegramConfig.localApiUrl) {
         // Strip trailing slash from local API URL
         const localApiUrl = telegramConfig.localApiUrl.replace(/\/$/, '');
-        botOptions.telegram = {
-          apiRoot: localApiUrl
-        };
-        logger.info({
-          useLocalApi: true,
-          apiRoot: localApiUrl
-        }, 'Using Local Bot API server for large file support (up to 2GB)');
-
-        // REQUIRED STEP: Bot must log out from Telegram cloud servers
-        // before it can use a local Bot API server.
-        // We attempt this once; if it fails (already logged out), we continue.
+        
+        // Health check: verify Local Bot API is reachable before using it
+        let localApiReachable = false;
         try {
-          const tempBot = new Telegraf(telegramConfig.botToken); // standard API temp bot
-          await tempBot.telegram.logOut();
-          logger.info('Bot logged out from standard Telegram API — switching to Local Bot API');
-        } catch (logoutErr) {
-          // "Unauthorized" or "not found" just means already logged out — safe to ignore
-          logger.warn({ err: logoutErr.message }, 'logOut attempt failed (may already be on local API) — continuing');
+          localApiReachable = await this._checkLocalApiHealth(localApiUrl);
+        } catch (e) {
+          localApiReachable = false;
+        }
+        
+        if (localApiReachable) {
+          botOptions.telegram = {
+            apiRoot: localApiUrl
+          };
+          logger.info({
+            useLocalApi: true,
+            apiRoot: localApiUrl
+          }, 'Using Local Bot API server for large file support (up to 2GB)');
+
+          // REQUIRED STEP: Bot must log out from Telegram cloud servers
+          // before it can use a local Bot API server.
+          // Only do this ONCE — not on every reconnect.
+          if (!TelegramBotService._hasLoggedOut) {
+            try {
+              const tempBot = new Telegraf(telegramConfig.botToken); // standard API temp bot
+              await tempBot.telegram.logOut();
+              TelegramBotService._hasLoggedOut = true;
+              logger.info('Bot logged out from standard Telegram API — switching to Local Bot API');
+            } catch (logoutErr) {
+              // "Unauthorized" or "not found" just means already logged out — safe to ignore
+              TelegramBotService._hasLoggedOut = true; // Mark as done regardless
+              logger.warn({ err: logoutErr.message }, 'logOut attempt failed (may already be on local API) — continuing');
+            }
+          } else {
+            logger.info('Bot already logged out from standard API — skipping logOut()');
+          }
+        } else {
+          logger.warn({
+            localApiUrl
+          }, 'Local Bot API is NOT reachable — falling back to standard Telegram API (files limited to 20MB)');
+          // Don't set botOptions.telegram — use standard API
         }
 
       } else {
@@ -181,6 +203,36 @@ class TelegramBotService {
       this._reconnectTimer = null;
       this.initialize();
     }, delayMs);
+  }
+
+  /**
+   * Health check: verify Local Bot API is reachable.
+   * Makes a simple HTTP GET to the API root — if it responds, it's alive.
+   */
+  async _checkLocalApiHealth(localApiUrl) {
+    const http = require('http');
+    const https = require('https');
+    const proto = localApiUrl.startsWith('https') ? https : http;
+    
+    return new Promise((resolve) => {
+      const req = proto.get(localApiUrl, { timeout: 5000 }, (res) => {
+        // Any response (even 404) means the server is reachable
+        logger.info({ statusCode: res.statusCode, localApiUrl }, 'Local Bot API health check: server responded');
+        res.resume(); // Drain response
+        resolve(true);
+      });
+      
+      req.on('error', (err) => {
+        logger.warn({ err: err.message, localApiUrl }, 'Local Bot API health check: connection failed');
+        resolve(false);
+      });
+      
+      req.on('timeout', () => {
+        req.destroy();
+        logger.warn({ localApiUrl }, 'Local Bot API health check: timeout');
+        resolve(false);
+      });
+    });
   }
 
   async stop(signal = 'SHUTDOWN') {
@@ -556,5 +608,8 @@ class TelegramBotService {
   }
 
 }
+
+// Static flag: only call logOut() once per process lifetime
+TelegramBotService._hasLoggedOut = false;
 
 module.exports = new TelegramBotService();
