@@ -11,7 +11,7 @@ const corsOptions = {
     if (corsOrigins.includes(origin)) return callback(null, true);
     // Allow all Vercel preview + production deployments
     if (origin.endsWith('.vercel.app')) return callback(null, true);
-    logger.warn({ origin }, 'CORS: rejected origin');
+    logger.warn({ origin, allowedOrigins: corsOrigins }, 'CORS: rejected origin');
     callback(new Error('Not allowed by CORS'));
   },
   credentials: true,

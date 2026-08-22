@@ -54,7 +54,7 @@ const config = {
     const raw = process.env.ALLOWED_ORIGINS || process.env.CORS_ORIGIN || 'http://localhost:5175';
     return raw
       .split(',')
-      .map((s) => s.trim())
+      .map((s) => s.trim().replace(/^["']|["']$/g, '')) // strip accidental surrounding quotes
       .filter(Boolean);
   })(),
   rateLimit: {

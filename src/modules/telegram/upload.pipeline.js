@@ -62,9 +62,26 @@ const getTelegramFileUrl = (botToken, fileId) =>
         try {
           const parsed = JSON.parse(data);
           if (!parsed.ok || !parsed.result?.file_path) {
+            const errorMsg = parsed.description || 'Unknown error';
+            
+            // Check if it's the "file is too big" error (20MB+ on standard API)
+            if (errorMsg.includes('too big') || errorMsg.includes('file_too_large')) {
+              logger.error({ 
+                err: errorMsg,
+                fileId 
+              }, 'Pipeline: File exceeds 20MB limit on standard Telegram API');
+              return reject(new Error(
+                '❌ File too large! Standard Telegram API supports max 20MB.\n\n' +
+                '💡 Solutions:\n' +
+                '1. Use files under 20MB, OR\n' +
+                '2. Setup Local Bot API Server (supports up to 2GB)\n\n' +
+                'Contact admin for Local Bot API setup instructions.'
+              ));
+            }
+            
             // Log detailed error info
             logger.error({ 
-              err: parsed.description, 
+              err: errorMsg, 
               useLocal, 
               apiBase,
               fileId 
@@ -72,10 +89,10 @@ const getTelegramFileUrl = (botToken, fileId) =>
             
             // If local API failed, try standard API as fallback
             if (useLocal) {
-              logger.warn({ err: parsed.description }, 'Pipeline: Local Bot API getFile failed — falling back to standard API');
+              logger.warn({ err: errorMsg }, 'Pipeline: Local Bot API getFile failed — falling back to standard API');
               return _getFileFromStandardApi(botToken, fileId).then(resolve).catch(reject);
             }
-            return reject(new Error(parsed.description || 'Telegram getFile failed'));
+            return reject(new Error(errorMsg));
           }
           
           const downloadUrl = `${apiBase}/file/bot${botToken}/${parsed.result.file_path}`;
