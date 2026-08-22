@@ -47,8 +47,8 @@ const formatMessageWithHeaderFooter = async (userId, shareUrl, videoTitle) => {
 
 /* ─── Telegram file URL ─────────────────────────────────────────────────── */
 const getTelegramFileUrl = async (botToken, fileId) => {
-  // Use Local Bot API if configured (supports up to 2GB files)
-  // Otherwise fall back to standard API (20MB limit)
+  // Use Local Bot API if configured (supports files >20MB up to 2GB)
+  // Otherwise use standard API (20MB limit)
   const useLocalApi = telegramConfig.useLocalApi && telegramConfig.localApiUrl;
   const baseUrl = useLocalApi 
     ? telegramConfig.localApiUrl 
@@ -72,12 +72,14 @@ const getTelegramFileUrl = async (botToken, fileId) => {
           const parsed = JSON.parse(data);
           if (!parsed.ok || !parsed.result?.file_path) {
             const errMsg = parsed.description || 'getFile failed';
-            if (errMsg.toLowerCase().includes('too big') || errMsg.toLowerCase().includes('too large')) {
+            
+            // Check if it's a file size error
+            if (errMsg.toLowerCase().includes('too big') || errMsg.toLowerCase().includes('too large') || errMsg.toLowerCase().includes('file is too big')) {
               return reject(new Error(
-                '❌ File too large for standard API (20MB limit).\n\n' +
-                '💡 Admin: Configure TELEGRAM_USE_LOCAL_API=true and TELEGRAM_LOCAL_API_URL in Railway.'
+                'File too large for standard API (20MB limit). Solutions: 1. Send video DIRECTLY to bot (do not forward from channels). 2. Send as File instead of Video. 3. Compress video to under 20MB. Note: Forwarded videos from other channels cannot exceed 20MB.'
               ));
             }
+            
             return reject(new Error(errMsg));
           }
           
@@ -85,8 +87,9 @@ const getTelegramFileUrl = async (botToken, fileId) => {
           const downloadUrl = `${baseUrl}/file/bot${botToken}/${parsed.result.file_path}`;
           
           logger.info({ 
-            downloadUrl: downloadUrl.substring(0, 100) + '...', 
+            filePath: parsed.result.file_path,
             fileSize: parsed.result.file_size,
+            fileSizeMB: ((parsed.result.file_size || 0) / 1024 / 1024).toFixed(2),
             usingLocalApi: useLocalApi
           }, 'Pipeline: file download URL ready');
           
