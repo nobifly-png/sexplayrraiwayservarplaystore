@@ -53,7 +53,7 @@ const getTelegramFileUrl = (botToken, fileId) =>
     const apiBase = useLocal ? telegramConfig.localApiUrl : 'https://api.telegram.org';
 
     const url = `${apiBase}/bot${botToken}/getFile?file_id=${fileId}`;
-    logger.info({ apiBase, useLocalApi: !!useLocal }, 'Pipeline: fetching file info from Telegram API');
+    logger.info({ apiBase, useLocalApi: !!useLocal, fileId }, 'Pipeline: fetching file info from Telegram API');
 
     const req = https.get(url, { timeout: 30000 }, (res) => {
       let data = '';
@@ -62,6 +62,14 @@ const getTelegramFileUrl = (botToken, fileId) =>
         try {
           const parsed = JSON.parse(data);
           if (!parsed.ok || !parsed.result?.file_path) {
+            // Log detailed error info
+            logger.error({ 
+              err: parsed.description, 
+              useLocal, 
+              apiBase,
+              fileId 
+            }, 'Pipeline: getFile API returned error');
+            
             // If local API failed, try standard API as fallback
             if (useLocal) {
               logger.warn({ err: parsed.description }, 'Pipeline: Local Bot API getFile failed — falling back to standard API');
@@ -69,14 +77,27 @@ const getTelegramFileUrl = (botToken, fileId) =>
             }
             return reject(new Error(parsed.description || 'Telegram getFile failed'));
           }
+          
+          const downloadUrl = `${apiBase}/file/bot${botToken}/${parsed.result.file_path}`;
+          logger.info({ 
+            downloadUrl, 
+            filePath: parsed.result.file_path,
+            fileSize: parsed.result.file_size || 0,
+            useLocal
+          }, 'Pipeline: file download URL constructed');
+          
           resolve({
-            downloadUrl: `${apiBase}/file/bot${botToken}/${parsed.result.file_path}`,
+            downloadUrl,
             filePath: parsed.result.file_path,
             fileSize: parsed.result.file_size || 0
           });
-        } catch { reject(new Error('Failed to parse Telegram getFile response')); }
+        } catch (err) { 
+          logger.error({ err: err.message, data }, 'Pipeline: failed to parse Telegram getFile response');
+          reject(new Error('Failed to parse Telegram getFile response')); 
+        }
       });
       res.on('error', (err) => {
+        logger.error({ err: err.message, useLocal }, 'Pipeline: getFile response error');
         if (useLocal) {
           logger.warn({ err: err.message }, 'Pipeline: Local Bot API connection error — falling back to standard API');
           return _getFileFromStandardApi(botToken, fileId).then(resolve).catch(reject);
@@ -86,6 +107,7 @@ const getTelegramFileUrl = (botToken, fileId) =>
     });
 
     req.on('error', (err) => {
+      logger.error({ err: err.message, useLocal, apiBase }, 'Pipeline: getFile request error');
       if (useLocal) {
         logger.warn({ err: err.message }, 'Pipeline: Local Bot API request error — falling back to standard API');
         return _getFileFromStandardApi(botToken, fileId).then(resolve).catch(reject);
@@ -95,6 +117,7 @@ const getTelegramFileUrl = (botToken, fileId) =>
 
     req.on('timeout', () => {
       req.destroy();
+      logger.warn({ useLocal, apiBase }, 'Pipeline: getFile request timed out');
       if (useLocal) {
         logger.warn('Pipeline: Local Bot API timed out — falling back to standard API');
         return _getFileFromStandardApi(botToken, fileId).then(resolve).catch(reject);
@@ -194,8 +217,22 @@ const uploadTelegramVideo = async ({ userId, fileId, fileUniqueId, title, mimeTy
     try {
       rawBuffer = await new Promise((resolve, reject) => {
         const proto = downloadUrl.startsWith('https') ? https : http;
+        
+        logger.info({ 
+          attempt, 
+          maxAttempts, 
+          downloadUrl: downloadUrl.substring(0, 100) + '...', 
+          timeout: DOWNLOAD_TIMEOUT 
+        }, 'Pipeline: starting download attempt');
+        
         const req = proto.get(downloadUrl, { timeout: DOWNLOAD_TIMEOUT }, (res) => {
           if (res.statusCode !== 200) {
+            logger.error({ 
+              statusCode: res.statusCode, 
+              attempt, 
+              downloadUrl: downloadUrl.substring(0, 100) + '...',
+              headers: res.headers 
+            }, 'Pipeline: download failed with non-200 status');
             return reject(new Error(`HTTP ${res.statusCode}`));
           }
           
@@ -213,16 +250,24 @@ const uploadTelegramVideo = async ({ userId, fileId, fileUniqueId, title, mimeTy
           
           res.on('end', () => {
             const buffer = Buffer.concat(chunks);
-            logger.info({ totalSize: `${(buffer.length / 1024 / 1024).toFixed(1)}MB` }, 'Pipeline: download complete');
+            logger.info({ totalSize: `${(buffer.length / 1024 / 1024).toFixed(1)}MB`, attempt }, 'Pipeline: download complete');
             resolve(buffer);
           });
           
-          res.on('error', reject);
+          res.on('error', (err) => {
+            logger.error({ err: err.message, attempt }, 'Pipeline: download response error');
+            reject(err);
+          });
         });
         
-        req.on('error', reject);
+        req.on('error', (err) => {
+          logger.error({ err: err.message, attempt }, 'Pipeline: download request error');
+          reject(err);
+        });
+        
         req.on('timeout', () => {
           req.destroy();
+          logger.error({ attempt, timeout: DOWNLOAD_TIMEOUT }, 'Pipeline: download timeout');
           reject(new Error('Download timed out after 10 minutes'));
         });
       });
@@ -230,7 +275,7 @@ const uploadTelegramVideo = async ({ userId, fileId, fileUniqueId, title, mimeTy
       break; // Success, exit retry loop
       
     } catch (err) {
-      logger.warn({ attempt, maxAttempts, errMsg: err.message }, 'Pipeline: download attempt failed');
+      logger.warn({ attempt, maxAttempts, errMsg: err.message, errDetail: err.toString() }, 'Pipeline: download attempt failed');
       
       if (attempt >= maxAttempts) {
         throw new Error(`Download failed after ${maxAttempts} attempts: ${err.message}`);
