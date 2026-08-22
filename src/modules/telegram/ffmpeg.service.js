@@ -17,12 +17,15 @@ const getFfmpeg = () => {
 
 /**
  * Check if ffmpeg binary is available on PATH.
+ * Logs version info at startup for debugging.
  */
 const isFfmpegAvailable = () => {
   try {
-    require('child_process').execSync('ffmpeg -version', { stdio: 'ignore' });
+    const version = require('child_process').execSync('ffmpeg -version 2>&1 | head -1', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    logger.info({ ffmpegVersion: version.trim().slice(0, 100) }, 'FFmpeg binary found');
     return true;
-  } catch {
+  } catch (e) {
+    logger.warn({ err: e.message }, 'FFmpeg binary not found on PATH');
     return false;
   }
 };
