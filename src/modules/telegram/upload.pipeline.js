@@ -117,12 +117,20 @@ const getTelegramFileUrl = (botToken, fileId) =>
             return reject(new Error(errorMsg));
           }
           
-          const downloadUrl = `${apiBase}/file/bot${botToken}/${parsed.result.file_path}`;
+          // For download URL: use internal Railway URL if available (avoids 404 on public URL)
+          // Internal URL: http://telegram-bot-api.railway.internal:8081
+          // Public URL may return 404 for file downloads even if getFile works
+          const internalApiBase = process.env.TELEGRAM_LOCAL_API_INTERNAL_URL
+            ? process.env.TELEGRAM_LOCAL_API_INTERNAL_URL.replace(/\/$/, '')
+            : apiBase;
+          
+          const downloadUrl = `${internalApiBase}/file/bot${botToken}/${parsed.result.file_path}`;
           logger.info({ 
-            downloadUrl, 
+            downloadUrl: downloadUrl.substring(0, 100),
             filePath: parsed.result.file_path,
             fileSize: parsed.result.file_size || 0,
-            useLocal
+            useLocal,
+            usingInternalUrl: !!process.env.TELEGRAM_LOCAL_API_INTERNAL_URL
           }, 'Pipeline: file download URL constructed');
           
           resolve({
