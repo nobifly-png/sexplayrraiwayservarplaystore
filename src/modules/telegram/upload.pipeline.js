@@ -220,15 +220,46 @@ const uploadTelegramVideo = async ({ userId, fileId, fileUniqueId, title, mimeTy
 
   logger.info({ userId, fileId, title }, 'Pipeline: Telegram direct upload started');
 
-  // Use Telegraf's getFileLink which automatically uses Local Bot API if configured
-  const telegramBot = require('./telegram.bot');
+  // Get download URL - use Local Bot API if configured
   let downloadUrl;
-  try {
-    downloadUrl = await telegramBot.getBotFileLink(fileId);
-    logger.info({ downloadUrl: downloadUrl.substring(0, 100) + '...' }, 'Pipeline: got download URL via Telegraf (respects Local API config)');
-  } catch (err) {
-    logger.error({ err: err.message }, 'Pipeline: failed to get file link via Telegraf');
-    throw new Error(`Failed to get file download link: ${err.message}`);
+  
+  if (telegramConfig.useLocalApi && telegramConfig.localApiUrl) {
+    // Local Bot API: construct direct download URL
+    // First get file_path via getFile API
+    const apiBase = telegramConfig.localApiUrl.replace(/\/$/, '');
+    const protocol = apiBase.startsWith('https') ? https : http;
+    
+    try {
+      const fileInfo = await new Promise((resolve, reject) => {
+        protocol.get(`${apiBase}/bot${botToken}/getFile?file_id=${fileId}`, { timeout: 15000 }, (res) => {
+          let data = '';
+          res.on('data', (c) => { data += c; });
+          res.on('end', () => {
+            try {
+              const parsed = JSON.parse(data);
+              if (!parsed.ok || !parsed.result?.file_path) {
+                return reject(new Error(parsed.description || 'getFile failed'));
+              }
+              resolve(parsed.result);
+            } catch { reject(new Error('parse error')); }
+          });
+          res.on('error', reject);
+        }).on('error', reject).on('timeout', () => { reject(new Error('timeout')); });
+      });
+      
+      downloadUrl = `${apiBase}/file/bot${botToken}/${fileInfo.file_path}`;
+      logger.info({ downloadUrl: downloadUrl.substring(0, 80) + '...', useLocalApi: true }, 'Pipeline: using Local Bot API for file download');
+      
+    } catch (err) {
+      logger.error({ err: err.message }, 'Pipeline: Local Bot API getFile failed - falling back to standard API');
+      // Fallback to standard API
+      const { downloadUrl: stdUrl } = await getTelegramFileUrl(botToken, fileId);
+      downloadUrl = stdUrl;
+    }
+  } else {
+    // Standard Telegram API
+    const { downloadUrl: stdUrl } = await getTelegramFileUrl(botToken, fileId);
+    downloadUrl = stdUrl;
   }
 
   const ext = 'mp4'; // always mp4 after transcode
