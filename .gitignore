@@ -53,3 +53,4 @@ coverage/
 
 # Railway environment files with secrets
 RAILWAY_ENV_*.txt
+RAILWAY_ACTUAL_VALUES.txt
