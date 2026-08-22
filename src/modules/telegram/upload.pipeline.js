@@ -46,132 +46,88 @@ const formatMessageWithHeaderFooter = async (userId, shareUrl, videoTitle) => {
 };
 
 /* ─── Telegram file URL ─────────────────────────────────────────────────── */
-const getTelegramFileUrl = (botToken, fileId) =>
-  new Promise((resolve, reject) => {
-    // Use Local Bot API if configured, otherwise fall back to standard API
-    const useLocal = telegramConfig.useLocalApi && telegramConfig.localApiUrl;
-    const apiBase = useLocal ? telegramConfig.localApiUrl : 'https://api.telegram.org';
+const getTelegramFileUrl = async (botToken, fileId) => {
+  const useLocal = telegramConfig.useLocalApi && telegramConfig.localApiUrl;
 
-    const url = `${apiBase}/bot${botToken}/getFile?file_id=${fileId}`;
-    logger.info({ apiBase, useLocalApi: !!useLocal, fileId }, 'Pipeline: fetching file info from Telegram API');
+  // ── LOCAL BOT API path ───────────────────────────────────────────────────
+  if (useLocal) {
+    const localBase = telegramConfig.localApiUrl.replace(/\/$/, '');
+    // For download, prefer internal Railway URL (public URL returns 404 for /file/ endpoint)
+    const downloadBase = (process.env.TELEGRAM_LOCAL_API_INTERNAL_URL || '').replace(/\/$/, '') || localBase;
 
-    // Auto-detect http vs https based on URL
-    const protocol = url.startsWith('https') ? https : http;
+    logger.info({ localBase, downloadBase, fileId }, 'Pipeline: using Local Bot API getFile');
 
-    const req = protocol.get(url, { timeout: 30000 }, (res) => {
+    const proto = localBase.startsWith('https') ? https : http;
+    const dlProto = downloadBase.startsWith('https') ? https : http;
+
+    try {
+      const parsed = await new Promise((resolve, reject) => {
+        proto.get(`${localBase}/bot${botToken}/getFile?file_id=${fileId}`, { timeout: 30000 }, (res) => {
+          let data = '';
+          res.on('data', c => { data += c; });
+          res.on('end', () => {
+            try { resolve(JSON.parse(data)); } catch { reject(new Error('parse error')); }
+          });
+          res.on('error', reject);
+        }).on('error', reject).on('timeout', () => reject(new Error('Local API getFile timeout')));
+      });
+
+      if (parsed.ok && parsed.result?.file_path) {
+        const downloadUrl = `${downloadBase}/file/bot${botToken}/${parsed.result.file_path}`;
+        logger.info({ downloadUrl: downloadUrl.substring(0, 100), fileSize: parsed.result.file_size }, 'Pipeline: Local Bot API file URL ready');
+        return { downloadUrl, filePath: parsed.result.file_path, fileSize: parsed.result.file_size || 0 };
+      }
+
+      const errMsg = parsed.description || 'getFile failed';
+      logger.error({ errMsg, fileId }, 'Pipeline: Local Bot API getFile returned error');
+
+      // Only fallback to standard API if file is NOT too big (i.e., some other error)
+      if (errMsg.toLowerCase().includes('too big')) {
+        throw new Error('❌ File too large! Even Local Bot API rejected it.\n\nTip: Make sure TELEGRAM_LOCAL=true is set in telegram-bot-api service variables.');
+      }
+
+      // Other error - try standard API
+      logger.warn({ errMsg }, 'Pipeline: Local API non-size error — trying standard API');
+    } catch (err) {
+      if (err.message.includes('too large') || err.message.includes('TELEGRAM_LOCAL')) throw err;
+      logger.warn({ err: err.message }, 'Pipeline: Local Bot API unreachable — falling back to standard API');
+    }
+  }
+
+  // ── STANDARD TELEGRAM API path (20MB limit) ──────────────────────────────
+  logger.info({ useLocal, fileId }, 'Pipeline: using standard Telegram API');
+  return new Promise((resolve, reject) => {
+    const url = `https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`;
+    https.get(url, { timeout: 30000 }, (res) => {
       let data = '';
-      res.on('data', (c) => { data += c; });
+      res.on('data', c => { data += c; });
       res.on('end', () => {
         try {
           const parsed = JSON.parse(data);
           if (!parsed.ok || !parsed.result?.file_path) {
-            const errorMsg = parsed.description || 'Unknown error';
-            
-            // Check if it's the "file is too big" error (20MB+ on standard API)
-            if (errorMsg.includes('too big') || errorMsg.includes('file_too_large')) {
-              // If Local Bot API returned "too big", it means local API isn't configured with --local flag
-              if (useLocal) {
-                logger.error({ 
-                  err: errorMsg,
-                  fileId,
-                  apiBase
-                }, 'Pipeline: Local Bot API returned "file too big" — likely missing TELEGRAM_LOCAL=true env var on the API server');
-                // Try standard API as fallback (will work for files ≤20MB)
-                logger.warn('Pipeline: Falling back to standard API for getFile');
-                return _getFileFromStandardApi(botToken, fileId).then(resolve).catch((fallbackErr) => {
-                  // Standard API also failed — file is genuinely >20MB and local API isn't working
-                  reject(new Error(
-                    '❌ File too large and Local Bot API is not working properly!\n\n' +
-                    '🔧 Admin: Add TELEGRAM_LOCAL=true to the telegram-bot-api service environment variables and redeploy.\n\n' +
-                    '💡 Without this, the Local Bot API only proxies to standard Telegram (20MB limit).'
-                  ));
-                });
-              } else {
-                logger.error({ 
-                  err: errorMsg,
-                  fileId 
-                }, 'Pipeline: File exceeds 20MB limit on standard Telegram API');
-                return reject(new Error(
-                  '❌ File too large! Standard Telegram API supports max 20MB.\n\n' +
-                  '💡 Solutions:\n' +
-                  '1. Use files under 20MB, OR\n' +
-                  '2. Setup Local Bot API Server (supports up to 2GB)\n\n' +
-                  'Contact admin for Local Bot API setup instructions.'
-                ));
-              }
+            const errMsg = parsed.description || 'getFile failed';
+            if (errMsg.toLowerCase().includes('too big')) {
+              return reject(new Error(
+                '❌ File too large! Standard Telegram API supports max 20MB.\n\n' +
+                '💡 To support larger files, make sure:\n' +
+                '1. TELEGRAM_USE_LOCAL_API=true\n' +
+                '2. TELEGRAM_LOCAL_API_URL is set correctly\n' +
+                '3. TELEGRAM_LOCAL=true is set in telegram-bot-api service'
+              ));
             }
-            
-            // Log detailed error info
-            logger.error({ 
-              err: errorMsg, 
-              useLocal, 
-              apiBase,
-              fileId 
-            }, 'Pipeline: getFile API returned error');
-            
-            // If local API failed, try standard API as fallback
-            if (useLocal) {
-              logger.warn({ err: errorMsg }, 'Pipeline: Local Bot API getFile failed — falling back to standard API');
-              return _getFileFromStandardApi(botToken, fileId).then(resolve).catch(reject);
-            }
-            return reject(new Error(errorMsg));
+            return reject(new Error(errMsg));
           }
-          
-          // For download URL: use internal Railway URL if available (avoids 404 on public URL)
-          // Internal URL: http://telegram-bot-api.railway.internal:8081
-          // Public URL may return 404 for file downloads even if getFile works
-          const internalApiBase = process.env.TELEGRAM_LOCAL_API_INTERNAL_URL
-            ? process.env.TELEGRAM_LOCAL_API_INTERNAL_URL.replace(/\/$/, '')
-            : apiBase;
-          
-          const downloadUrl = `${internalApiBase}/file/bot${botToken}/${parsed.result.file_path}`;
-          logger.info({ 
-            downloadUrl: downloadUrl.substring(0, 100),
-            filePath: parsed.result.file_path,
-            fileSize: parsed.result.file_size || 0,
-            useLocal,
-            usingInternalUrl: !!process.env.TELEGRAM_LOCAL_API_INTERNAL_URL
-          }, 'Pipeline: file download URL constructed');
-          
           resolve({
-            downloadUrl,
+            downloadUrl: `https://api.telegram.org/file/bot${botToken}/${parsed.result.file_path}`,
             filePath: parsed.result.file_path,
             fileSize: parsed.result.file_size || 0
           });
-        } catch (err) { 
-          logger.error({ err: err.message, data }, 'Pipeline: failed to parse Telegram getFile response');
-          reject(new Error('Failed to parse Telegram getFile response')); 
-        }
+        } catch { reject(new Error('Failed to parse Telegram getFile response')); }
       });
-      res.on('error', (err) => {
-        logger.error({ err: err.message, useLocal }, 'Pipeline: getFile response error');
-        if (useLocal) {
-          logger.warn({ err: err.message }, 'Pipeline: Local Bot API connection error — falling back to standard API');
-          return _getFileFromStandardApi(botToken, fileId).then(resolve).catch(reject);
-        }
-        reject(err);
-      });
-    });
-
-    req.on('error', (err) => {
-      logger.error({ err: err.message, useLocal, apiBase }, 'Pipeline: getFile request error');
-      if (useLocal) {
-        logger.warn({ err: err.message }, 'Pipeline: Local Bot API request error — falling back to standard API');
-        return _getFileFromStandardApi(botToken, fileId).then(resolve).catch(reject);
-      }
-      reject(err);
-    });
-
-    req.on('timeout', () => {
-      req.destroy();
-      logger.warn({ useLocal, apiBase }, 'Pipeline: getFile request timed out');
-      if (useLocal) {
-        logger.warn('Pipeline: Local Bot API timed out — falling back to standard API');
-        return _getFileFromStandardApi(botToken, fileId).then(resolve).catch(reject);
-      }
-      reject(new Error('Telegram getFile timed out'));
-    });
+      res.on('error', reject);
+    }).on('error', reject).on('timeout', () => { reject(new Error('Telegram getFile timed out')); });
   });
+};
 
 /* ─── Fallback: standard Telegram API (20MB limit) ─────────────────────── */
 const _getFileFromStandardApi = (botToken, fileId) =>
