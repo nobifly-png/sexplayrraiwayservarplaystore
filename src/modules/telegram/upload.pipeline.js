@@ -47,13 +47,24 @@ const formatMessageWithHeaderFooter = async (userId, shareUrl, videoTitle) => {
 
 /* ─── Telegram file URL ─────────────────────────────────────────────────── */
 const getTelegramFileUrl = async (botToken, fileId) => {
-  // Always use standard Telegram API - it returns direct CDN URLs that work for ANY file size
-  // Local Bot API on Railway has ephemeral storage issues (files disappear on restart)
-  logger.info({ fileId }, 'Pipeline: using Telegram CDN (supports up to 2GB)');
+  // Use Local Bot API if configured (supports up to 2GB files)
+  // Otherwise fall back to standard API (20MB limit)
+  const useLocalApi = telegramConfig.useLocalApi && telegramConfig.localApiUrl;
+  const baseUrl = useLocalApi 
+    ? telegramConfig.localApiUrl 
+    : 'https://api.telegram.org';
+  
+  logger.info({ 
+    fileId, 
+    useLocalApi, 
+    apiUrl: baseUrl 
+  }, 'Pipeline: fetching file info');
   
   return new Promise((resolve, reject) => {
-    const url = `https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`;
-    https.get(url, { timeout: 30000 }, (res) => {
+    const url = `${baseUrl}/bot${botToken}/getFile?file_id=${fileId}`;
+    const protocol = url.startsWith('https') ? https : http;
+    
+    protocol.get(url, { timeout: 30000 }, (res) => {
       let data = '';
       res.on('data', c => { data += c; });
       res.on('end', () => {
@@ -61,22 +72,23 @@ const getTelegramFileUrl = async (botToken, fileId) => {
           const parsed = JSON.parse(data);
           if (!parsed.ok || !parsed.result?.file_path) {
             const errMsg = parsed.description || 'getFile failed';
-            if (errMsg.toLowerCase().includes('too big')) {
+            if (errMsg.toLowerCase().includes('too big') || errMsg.toLowerCase().includes('too large')) {
               return reject(new Error(
                 '❌ File too large for standard API (20MB limit).\n\n' +
-                '💡 For files >20MB, the bot needs Local Bot API with persistent storage (VPS required).'
+                '💡 Admin: Configure TELEGRAM_USE_LOCAL_API=true and TELEGRAM_LOCAL_API_URL in Railway.'
               ));
             }
             return reject(new Error(errMsg));
           }
           
-          // Use Telegram's CDN URL directly - works for files up to 2GB
-          const downloadUrl = `https://api.telegram.org/file/bot${botToken}/${parsed.result.file_path}`;
+          // Build download URL
+          const downloadUrl = `${baseUrl}/file/bot${botToken}/${parsed.result.file_path}`;
           
           logger.info({ 
             downloadUrl: downloadUrl.substring(0, 100) + '...', 
-            fileSize: parsed.result.file_size 
-          }, 'Pipeline: Telegram CDN URL ready');
+            fileSize: parsed.result.file_size,
+            usingLocalApi: useLocalApi
+          }, 'Pipeline: file download URL ready');
           
           resolve({
             downloadUrl,
