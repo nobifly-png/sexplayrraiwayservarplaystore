@@ -23,7 +23,7 @@
   "license": "ISC",
   "dependencies": {
     "@aws-sdk/client-s3": "^3.515.0",
-    "@aws-sdk/lib-storage": "^3.515.0",
+    "@aws-sdk/lib-storage": "^3.1116.0",
     "@aws-sdk/s3-request-presigner": "^3.515.0",
     "axios": "^1.19.0",
     "bcrypt": "^5.1.1",
@@ -44,7 +44,8 @@
     "nodemailer": "^9.0.5",
     "pino": "^8.17.2",
     "pino-pretty": "^10.3.1",
-    "telegraf": "^4.16.3"
+    "telegraf": "^4.16.3",
+    "telegram": "2.26.22"
   },
   "devDependencies": {
     "nodemon": "^3.0.3"

@@ -74,6 +74,18 @@ const config = {
     botToken: process.env.TELEGRAM_BOT_TOKEN,
     enabled: process.env.TELEGRAM_BOT_ENABLED === 'true' && Boolean(process.env.TELEGRAM_BOT_TOKEN)
   },
+  gramjs: {
+    apiId: process.env.TELEGRAM_API_ID ? parseInt(process.env.TELEGRAM_API_ID, 10) : null,
+    // apiHash and session are intentionally not exposed here — consumed directly
+    // from process.env in gramjs.client.js to avoid them ever appearing in logs.
+    storageChannelId: process.env.STORAGE_CHANNEL_ID || null,
+    enabled: Boolean(
+      process.env.TELEGRAM_API_ID &&
+      process.env.TELEGRAM_API_HASH &&
+      process.env.GRAMJS_SESSION &&
+      process.env.STORAGE_CHANNEL_ID
+    )
+  },
   superAdmin: {
     name: process.env.SUPER_ADMIN_NAME || 'Super Admin',
     email: process.env.SUPER_ADMIN_EMAIL || 'admin@zexgram.local',
