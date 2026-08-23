@@ -155,101 +155,39 @@ const uploadTelegramVideo = async ({ userId, fileId, fileUniqueId, title, mimeTy
   if (!botToken) throw new Error('Telegram bot token not configured');
   if (!isR2Configured()) throw new Error('R2 storage not configured');
 
-  logger.info({ userId, fileId, title }, 'Pipeline: Telegram direct upload started');
+  logger.info({ userId, fileId, title, fileSize }, 'Pipeline: Telegram direct upload started');
 
-  // Get download URL - use getTelegramFileUrl which handles Local Bot API with fallback
+  // Get download URL - handles Local Bot API with fallback to standard API
   const { downloadUrl, filePath: telegramFilePath, fileSize: actualFileSize } = await getTelegramFileUrl(botToken, fileId);
-  logger.info({ downloadUrl: downloadUrl.substring(0, 100) + '...', fileSize: actualFileSize }, 'Pipeline: file download URL ready');
+  
+  logger.info({ 
+    downloadUrl: downloadUrl.substring(0, 100) + '...',
+    fileSize: actualFileSize,
+    fileSizeMB: (actualFileSize / 1024 / 1024).toFixed(2)
+  }, 'Pipeline: file download URL ready');
 
   const ext = 'mp4'; // always mp4 after transcode
   const storageKey = buildVideoStorageKey(userId, 'mp4');
 
-  // Download video buffer with retry logic (10 min timeout per attempt for large files)
-  logger.info({ storageKey, fileSize: actualFileSize }, 'Pipeline: downloading from Telegram CDN');
+  // STREAMING UPLOAD: Download from Telegram → Stream to R2 (no buffering)
+  // This supports files up to 2GB without memory issues
+  logger.info({ storageKey, fileSize: actualFileSize }, 'Pipeline: streaming to R2');
   
-  let rawBuffer;
-  let attempt = 0;
-  const maxAttempts = 3;
-  const DOWNLOAD_TIMEOUT = 600000; // 10 minutes per attempt
-  
-  while (attempt < maxAttempts) {
-    attempt++;
-    try {
-      rawBuffer = await new Promise((resolve, reject) => {
-        logger.info({ 
-          attempt, 
-          maxAttempts, 
-          downloadUrl: downloadUrl.substring(0, 100) + '...', 
-          timeout: DOWNLOAD_TIMEOUT
-        }, 'Pipeline: starting download attempt');
-        
-        const req = https.get(downloadUrl, { timeout: DOWNLOAD_TIMEOUT }, (res) => {
-          if (res.statusCode !== 200) {
-            logger.error({ 
-              statusCode: res.statusCode, 
-              attempt, 
-              downloadUrl: downloadUrl.substring(0, 100) + '...',
-              headers: res.headers 
-            }, 'Pipeline: download failed with non-200 status');
-            return reject(new Error(`HTTP ${res.statusCode}`));
-          }
-          
-          const chunks = [];
-          let downloaded = 0;
-          
-          res.on('data', (chunk) => {
-            chunks.push(chunk);
-            downloaded += chunk.length;
-            // Log progress every 10MB
-            if (downloaded % (10 * 1024 * 1024) < chunk.length) {
-              logger.info({ downloaded: `${(downloaded / 1024 / 1024).toFixed(1)}MB` }, 'Pipeline: download progress');
-            }
-          });
-          
-          res.on('end', () => {
-            const buffer = Buffer.concat(chunks);
-            logger.info({ totalSize: `${(buffer.length / 1024 / 1024).toFixed(1)}MB`, attempt }, 'Pipeline: download complete');
-            resolve(buffer);
-          });
-          
-          res.on('error', (err) => {
-            logger.error({ err: err.message, attempt }, 'Pipeline: download response error');
-            reject(err);
-          });
-        });
-        
-        req.on('error', (err) => {
-          logger.error({ err: err.message, attempt }, 'Pipeline: download request error');
-          reject(err);
-        });
-        
-        req.on('timeout', () => {
-          req.destroy();
-          logger.error({ attempt, timeout: DOWNLOAD_TIMEOUT }, 'Pipeline: download timeout');
-          reject(new Error('Download timed out after 10 minutes'));
-        });
-      });
-      
-      break; // Success, exit retry loop
-      
-    } catch (err) {
-      logger.warn({ attempt, maxAttempts, errMsg: err.message }, 'Pipeline: download attempt failed');
-      
-      if (attempt >= maxAttempts) {
-        throw new Error(`Download failed after ${maxAttempts} attempts: ${err.message}`);
-      }
-      
-      // Wait before retry (exponential backoff: 2s, 4s, 8s)
-      const delay = Math.min(2000 * Math.pow(2, attempt - 1), 8000);
-      logger.info({ delay, nextAttempt: attempt + 1 }, 'Pipeline: retrying download');
-      await new Promise(r => setTimeout(r, delay));
-    }
+  let uploadResult;
+  try {
+    uploadResult = await streamUrlToR2(downloadUrl, storageKey, 'video/mp4', actualFileSize);
+  } catch (err) {
+    logger.error({ err: err.message, storageKey }, 'Pipeline: streaming upload failed');
+    throw new Error(`Upload failed: ${err.message}`);
   }
 
-  // Upload ORIGINAL video immediately to R2 - transcode later in background
-  logger.info({ storageKey, originalSize: rawBuffer.length }, 'Pipeline: uploading original to R2 (will transcode async)');
-  const { url: _u } = await uploadBufferToR2(rawBuffer, storageKey, 'video/mp4');
+  logger.info({ 
+    storageKey, 
+    uploadedSize: uploadResult.fileSize,
+    uploadedSizeMB: (uploadResult.fileSize / 1024 / 1024).toFixed(2)
+  }, 'Pipeline: streaming upload complete');
 
+  // Create video record
   const video = await Video.create({
     creatorId: userId,
     title: (title || 'Untitled').slice(0, 200),
@@ -258,46 +196,24 @@ const uploadTelegramVideo = async ({ userId, fileId, fileUniqueId, title, mimeTy
     storageKey,
     fileName: title,
     mimeType: 'video/mp4',
-    fileSize: rawBuffer.length,
+    fileSize: uploadResult.fileSize,
     status: VIDEO_STATUS.READY,  // Mark ready immediately
     telegramFileUniqueId: fileUniqueId || undefined,
     uploadSource: 'TELEGRAM_DIRECT',
     createdViaBot: true
   });
 
-  logger.info({ videoId: video._id }, 'Pipeline: video record created, starting background transcode');
+  logger.info({ videoId: video._id }, 'Pipeline: video record created');
 
-  // Start background transcode - don't wait for it
-  (async () => {
-    try {
-      logger.info({ videoId: video._id, size: rawBuffer.length }, 'Background: transcoding to H.264 Baseline');
-      const transcodedBuffer = await transcodeToCompatible(rawBuffer);
-      
-      // Only replace if transcode actually worked
-      if (transcodedBuffer.length !== rawBuffer.length || transcodedBuffer !== rawBuffer) {
-        const transcodedKey = storageKey.replace(/\.mp4$/, '_transcoded.mp4');
-        await uploadBufferToR2(transcodedBuffer, transcodedKey, 'video/mp4');
-        
-        // Update video to use transcoded version
-        video.storageKey = transcodedKey;
-        video.fileSize = transcodedBuffer.length;
-        await video.save();
-        
-        logger.info({ videoId: video._id, originalSize: rawBuffer.length, transcodedSize: transcodedBuffer.length }, 'Background: transcode complete, video updated');
-      } else {
-        logger.warn({ videoId: video._id }, 'Background: transcode returned original - FFmpeg failed');
-      }
-    } catch (err) {
-      logger.error({ videoId: video._id, err: err.message }, 'Background: transcode failed, keeping original');
-    }
-  })().catch(() => {});  // Async fire-and-forget
-
+  // Optional: Thumbnail handling
   if (pendingThumb?.buffer) {
     await attachThumbnail(video, pendingThumb, null);
   } else {
+    // Thumbnail generation in background (async, non-blocking)
     attachThumbnail(video, null, downloadUrl).catch(() => {});
   }
 
+  // Create share link
   const link = await linkService.createLink(userId, video._id.toString());
   const shareUrl = `${FRONTEND_URL}/watch/${link.shortCode}`;
 

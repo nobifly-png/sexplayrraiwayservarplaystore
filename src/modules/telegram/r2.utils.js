@@ -1,76 +1,128 @@
 const https = require('https');
 const http = require('http');
+const { Upload } = require('@aws-sdk/lib-storage');
 const { PutObjectCommand, GetObjectCommand, CopyObjectCommand } = require('@aws-sdk/client-s3');
 const { r2Client, bucketName, publicBaseUrl, isR2Configured } = require('../../config/r2');
 const crypto = require('crypto');
 const logger = require('../../config/logger');
+const { PassThrough } = require('stream');
 
 const MAX_STREAM_BYTES = 2 * 1024 * 1024 * 1024; // 2GB hard cap
 
 /**
- * Stream a remote URL directly into R2 using chunked buffer.
- * Avoids writing to disk. Collects stream into buffer then uploads.
- * For very large files this is memory-bound — acceptable for Telegram's 2GB limit.
+ * Stream a remote URL directly into R2 using AWS SDK's Upload (multipart).
+ * This handles large files (up to 2GB) without loading into memory.
+ * Uses streaming with automatic multipart upload management.
  */
-const streamUrlToR2 = (downloadUrl, storageKey, mimeType) => {
+const streamUrlToR2 = (downloadUrl, storageKey, mimeType, expectedSize = null) => {
   return new Promise((resolve, reject) => {
     if (!isR2Configured() || !r2Client) {
       return reject(new Error('R2 not configured'));
     }
 
     const proto = downloadUrl.startsWith('https') ? https : http;
+    const passThrough = new PassThrough();
+    
+    let totalBytes = 0;
+    let downloadStarted = false;
 
+    // Start download
     const request = proto.get(downloadUrl, { timeout: 120000 }, (res) => {
       if (res.statusCode !== 200) {
         res.resume();
+        passThrough.destroy();
         return reject(new Error(`Download failed: HTTP ${res.statusCode}`));
       }
 
-      const chunks = [];
-      let totalBytes = 0;
+      downloadStarted = true;
 
+      // Pipe download to passthrough stream
       res.on('data', (chunk) => {
         totalBytes += chunk.length;
         if (totalBytes > MAX_STREAM_BYTES) {
           res.destroy();
-          return reject(new Error('File exceeds maximum allowed size'));
+          passThrough.destroy();
+          return reject(new Error('File exceeds maximum allowed size (2GB)'));
         }
-        chunks.push(chunk);
-      });
-
-      res.on('end', async () => {
-        try {
-          const buffer = Buffer.concat(chunks, totalBytes);
-          const isVideo = (mimeType || '').startsWith('video/');
-          await r2Client.send(new PutObjectCommand({
-            Bucket: bucketName,
-            Key: storageKey,
-            Body: buffer,
-            ContentType: mimeType || 'application/octet-stream',
-            ContentLength: totalBytes,
-            ContentDisposition: 'inline',
-            CacheControl: isVideo ? 'public, max-age=31536000' : 'public, max-age=86400'
-          }));
-          logger.info({ storageKey, totalBytes }, 'R2: stream upload complete');
-          resolve({ fileSize: totalBytes });
-        } catch (err) {
-          reject(err);
+        
+        // Log progress every 50MB
+        if (totalBytes % (50 * 1024 * 1024) < chunk.length) {
+          logger.info({ 
+            downloaded: `${(totalBytes / 1024 / 1024).toFixed(1)}MB`,
+            expected: expectedSize ? `${(expectedSize / 1024 / 1024).toFixed(1)}MB` : 'unknown'
+          }, 'StreamToR2: download progress');
         }
       });
 
-      res.on('error', reject);
+      res.on('error', (err) => {
+        passThrough.destroy(err);
+      });
+
+      // Pipe response to passthrough
+      res.pipe(passThrough);
     });
 
-    request.on('error', reject);
+    request.on('error', (err) => {
+      if (!downloadStarted) {
+        passThrough.destroy(err);
+        reject(err);
+      }
+    });
+
     request.on('timeout', () => {
       request.destroy();
+      passThrough.destroy(new Error('Download request timed out'));
       reject(new Error('Download request timed out'));
     });
+
+    // Upload stream to R2 using multipart upload
+    const isVideo = (mimeType || '').startsWith('video/');
+    
+    const upload = new Upload({
+      client: r2Client,
+      params: {
+        Bucket: bucketName,
+        Key: storageKey,
+        Body: passThrough,
+        ContentType: mimeType || 'application/octet-stream',
+        ContentDisposition: 'inline',
+        CacheControl: isVideo ? 'public, max-age=31536000' : 'public, max-age=86400'
+      },
+      queueSize: 4, // concurrent parts
+      partSize: 10 * 1024 * 1024, // 10MB parts (minimum for multipart)
+      leavePartsOnError: false // cleanup on failure
+    });
+
+    upload.on('httpUploadProgress', (progress) => {
+      if (progress.loaded && progress.total) {
+        const percent = ((progress.loaded / progress.total) * 100).toFixed(1);
+        logger.info({ 
+          loaded: `${(progress.loaded / 1024 / 1024).toFixed(1)}MB`,
+          total: `${(progress.total / 1024 / 1024).toFixed(1)}MB`,
+          percent: `${percent}%`
+        }, 'StreamToR2: upload progress');
+      }
+    });
+
+    upload.done()
+      .then(() => {
+        logger.info({ storageKey, totalBytes }, 'StreamToR2: complete');
+        resolve({ fileSize: totalBytes, storageKey, url: `${publicBaseUrl}/${storageKey}` });
+      })
+      .catch((err) => {
+        logger.error({ err: err.message, storageKey }, 'StreamToR2: upload failed');
+        // Ensure request is aborted
+        if (request) {
+          request.destroy();
+        }
+        reject(err);
+      });
   });
 };
 
 /**
  * Upload a buffer directly to R2.
+ * Used for small files and thumbnails.
  */
 const uploadBufferToR2 = async (buffer, storageKey, mimeType) => {
   if (!isR2Configured() || !r2Client) throw new Error('R2 not configured');
