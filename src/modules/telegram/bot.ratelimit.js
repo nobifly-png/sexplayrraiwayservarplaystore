@@ -6,7 +6,7 @@
 const windows = new Map(); // chatId -> [timestamp, ...]
 
 const WINDOW_MS = 60 * 1000; // 1 minute
-const MAX_REQUESTS = 10;      // max ingest requests per minute per user
+const MAX_REQUESTS = 100;     // max ingest requests per minute per user (supports bulk 100-video forwards)
 
 const isRateLimited = (chatId) => {
   const now = Date.now();

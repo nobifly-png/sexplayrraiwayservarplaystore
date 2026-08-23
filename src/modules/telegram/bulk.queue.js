@@ -1,7 +1,7 @@
 const logger = require('../../config/logger');
 
-const CONCURRENCY = 2;
-const INTER_MSG_DELAY_MS = 400;
+const CONCURRENCY = 5;            // parallel uploads per user
+const INTER_MSG_DELAY_MS = 100;   // delay between result messages (ms)
 
 const userQueues = new Map();
 
@@ -149,7 +149,7 @@ const enqueue = (ctx, chatId, title, processor) => {
   q.flushTimer = setTimeout(() => {
     q.flushTimer = null;
     processNext(ctx, chatId);
-  }, 500);
+  }, 1000); // wait 1s for all forwarded messages to arrive before starting
 };
 
 module.exports = { enqueue, getQueue, clearQueue };
