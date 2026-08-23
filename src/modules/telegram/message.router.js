@@ -1,6 +1,7 @@
 const { detectVideoLink, SUPPORTED_SOURCES } = require('./link.parser');
 const { setPending, consumePending } = require('./pendingThumb.cache');
-const { uploadTelegramVideo, duplicateClipNovaVideo } = require('./upload.pipeline');
+const { uploadTelegramVideo, uploadLargeVideoViaGramJS, duplicateClipNovaVideo } = require('./upload.pipeline');
+const { LARGE_FILE_THRESHOLD } = require('./gramjs.client');
 const { enqueue } = require('./bulk.queue');
 const { isRateLimited } = require('./bot.ratelimit');
 const Video = require('../videos/video.model');
@@ -267,11 +268,22 @@ const _handleVideoFile = (ctx, session, fileInfo) => {
   // Consume pending thumb NOW before async enqueue — prevents cross-user collision
   const pendingThumb = consumePending(chatId);
 
+  // Capture message_id BEFORE the async enqueue closure runs so it stays correct
+  // even if ctx.message is mutated later by Telegraf internals.
+  const originalMsgId = ctx.message.message_id;
+  const originalChatId = chatId;
+
+  // Is this a large file that needs the GramJS path?
+  // Telegram omits file_size (or sends 0) for files >20MB — treat missing/zero
+  // as "potentially large" and route to GramJS (safe default).
+  // Only use the standard Bot API when size is explicitly known to be ≤ threshold.
+  const isLargeFile = !fileSize || fileSize > LARGE_FILE_THRESHOLD;
+
   enqueue(ctx, String(chatId), title, async () => {
-    // Duplicate check: userId + fileUniqueId (NOT global — different users can repost same file)
+    // ── Duplicate check (both paths) ──────────────────────────────────────
     if (fileUniqueId) {
       const existing = await Video.findOne({
-        creatorId: session.userId,        // scoped to THIS user only
+        creatorId: session.userId,
         telegramFileUniqueId: fileUniqueId,
         isDeleted: false
       });
@@ -283,6 +295,26 @@ const _handleVideoFile = (ctx, session, fileInfo) => {
       }
     }
 
+    // ── Large file (>19MB) → GramJS forward+download path ────────────────
+    if (isLargeFile) {
+      logger.info({
+        userId: session.userId,
+        fileSizeMB: fileSize ? (fileSize / 1024 / 1024).toFixed(1) : 'unknown (Telegram omitted)',
+        originalMsgId,
+      }, 'MessageRouter: routing to GramJS large-file pipeline');
+
+      const { video, shareUrl, message } = await uploadLargeVideoViaGramJS({
+        userId: session.userId,
+        fileId, fileUniqueId, title, mimeType, fileSize,
+        pendingThumb,
+        telegrafCtx: ctx,
+        originalChatId,
+        originalMsgId,
+      });
+      return { title: video.title, shareUrl, message, thumbnailUrl: video.thumbnailUrl || null };
+    }
+
+    // ── Small file (≤19MB) → existing Bot API path (unchanged) ───────────
     const { video, shareUrl, message } = await uploadTelegramVideo({
       userId: session.userId,
       fileId, fileUniqueId, title, mimeType, fileSize,

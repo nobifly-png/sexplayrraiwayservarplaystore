@@ -15,6 +15,11 @@ const {
 const { generateThumbnailFromUrl, transcodeToCompatible } = require('./ffmpeg.service');
 const logger = require('../../config/logger');
 const telegramConfig = require('../../config/telegram');
+const {
+  LARGE_FILE_THRESHOLD,
+  downloadLargeFileToR2,
+  deleteStorageChannelMessage,
+} = require('./gramjs.client');
 
 const FRONTEND_URL = (process.env.FRONTEND_URL || process.env.APP_URL || 'https://www.zaxgram.com').replace(/\/$/, '');
 /* ─── Format message with header/footer ────────────────────────────────── */
@@ -374,4 +379,122 @@ const duplicateClipNovaVideo = async ({ userId, shortCode, pendingThumb }) => {
   return { video: finalVideo, link, shareUrl, message: formattedMessage, wasAlreadyOwned: false };
 };
 
-module.exports = { uploadTelegramVideo, duplicateClipNovaVideo, attachThumbnail, getTelegramFileUrl };
+/* ─── PIPELINE 3: Large-file via GramJS (>19MB) ─────────────────────────── */
+/**
+ * Called by message.router when file_size > LARGE_FILE_THRESHOLD.
+ *
+ * Steps:
+ *  1. Forward original message to storage channel via Telegraf Bot API.
+ *  2. Use GramJS to stream-download the media from that forwarded message.
+ *  3. Pipe chunks into R2 multipart upload (reuses gramjs.client downloadLargeFileToR2).
+ *  4. On success: delete the forwarded message from storage channel.
+ *  5. On failure: leave the forwarded message for manual recovery; return clean error.
+ *
+ * @param {object} opts
+ * @param {string}  opts.userId
+ * @param {string}  opts.fileId          - original Telegram file_id (for dedup only)
+ * @param {string}  opts.fileUniqueId    - original file_unique_id (dedup key)
+ * @param {string}  opts.title
+ * @param {string}  opts.mimeType
+ * @param {number}  opts.fileSize        - bytes as reported by Telegram
+ * @param {object}  [opts.pendingThumb]  - { buffer, mimeType }
+ * @param {object}  opts.telegrafCtx     - live Telegraf ctx (for forwardMessage)
+ * @param {number}  opts.originalChatId  - chat the original message came from
+ * @param {number}  opts.originalMsgId   - message_id of the original video message
+ */
+const uploadLargeVideoViaGramJS = async ({
+  userId, fileId, fileUniqueId, title, mimeType, fileSize,
+  pendingThumb, telegrafCtx, originalChatId, originalMsgId,
+}) => {
+  const botToken = telegramConfig.botToken;
+  if (!botToken) throw new Error('Telegram bot token not configured');
+  if (!isR2Configured()) throw new Error('R2 storage not configured');
+
+  const storageChannelId = process.env.STORAGE_CHANNEL_ID;
+  if (!storageChannelId) throw new Error('STORAGE_CHANNEL_ID is not configured');
+
+  logger.info({
+    userId,
+    fileUniqueId,
+    fileSizeMB: fileSize ? (fileSize / 1024 / 1024).toFixed(1) : 'unknown (Telegram omitted)',
+    originalMsgId,
+    originalChatId,
+  }, 'Pipeline[GramJS]: large-file upload started');
+
+  // ── Step 1: Forward original message to storage channel ──────────────────
+  let forwardedMsgId = null;
+  try {
+    const forwarded = await telegrafCtx.telegram.forwardMessage(
+      storageChannelId,   // destination
+      originalChatId,     // from chat
+      originalMsgId,      // message id
+    );
+    forwardedMsgId = forwarded.message_id;
+    logger.info({ forwardedMsgId, storageChannelId }, 'Pipeline[GramJS]: message forwarded to storage channel');
+  } catch (err) {
+    logger.error({ err: err.message, originalChatId, originalMsgId }, 'Pipeline[GramJS]: forward to storage channel failed');
+    throw new Error(`Could not forward message to storage channel: ${err.message}`);
+  }
+
+  // ── Step 2 + 3: GramJS stream-download → R2 multipart upload ─────────────
+  const storageKey = buildVideoStorageKey(userId, 'mp4');
+  let uploadResult;
+  try {
+    uploadResult = await downloadLargeFileToR2(forwardedMsgId, storageKey, fileSize);
+    logger.info({
+      storageKey,
+      uploadedMB: (uploadResult.fileSize / 1024 / 1024).toFixed(1),
+    }, 'Pipeline[GramJS]: R2 upload complete');
+  } catch (err) {
+    // Upload failed — leave forwarded message for manual recovery
+    logger.error({
+      err: err.message,
+      forwardedMsgId,
+      storageChannelId,
+    }, 'Pipeline[GramJS]: R2 upload failed — forwarded message kept for manual recovery');
+    throw new Error(`Large-file upload failed: ${err.message}`);
+  }
+
+  // ── Step 4: Delete the forwarded message from storage channel ────────────
+  // Fire-and-forget — if this fails the file is still uploaded successfully.
+  deleteStorageChannelMessage(forwardedMsgId).catch(() => {});
+
+  // ── Step 5: Create video record ───────────────────────────────────────────
+  const video = await Video.create({
+    creatorId: userId,
+    title: (title || 'Untitled').slice(0, 200),
+    description: 'Uploaded via Telegram Bot',
+    type: VIDEO_TYPE.DIRECT_UPLOAD,
+    storageKey,
+    fileName: title,
+    mimeType: 'video/mp4',
+    fileSize: uploadResult.fileSize,
+    status: VIDEO_STATUS.READY,
+    telegramFileUniqueId: fileUniqueId || undefined,
+    uploadSource: 'TELEGRAM_GRAMJS',
+    createdViaBot: true,
+  });
+
+  logger.info({ videoId: video._id }, 'Pipeline[GramJS]: video record created');
+
+  // ── Step 6: Thumbnail ─────────────────────────────────────────────────────
+  if (pendingThumb?.buffer) {
+    await attachThumbnail(video, pendingThumb, null);
+  } else {
+    // Attempt ffmpeg thumbnail from R2 public URL (async, non-blocking)
+    const videoPublicUrl = getPublicUrl(storageKey);
+    attachThumbnail(video, null, videoPublicUrl).catch(() => {});
+  }
+
+  // ── Step 7: Create share link ─────────────────────────────────────────────
+  const link = await linkService.createLink(userId, video._id.toString());
+  const shareUrl = `${FRONTEND_URL}/watch/${link.shortCode}`;
+
+  const finalVideo = await Video.findById(video._id).lean();
+  const formattedMessage = await formatMessageWithHeaderFooter(userId, shareUrl, finalVideo.title);
+
+  logger.info({ videoId: video._id, shareUrl }, 'Pipeline[GramJS]: large-file upload complete');
+  return { video: finalVideo, link, shareUrl, message: formattedMessage };
+};
+
+module.exports = { uploadTelegramVideo, uploadLargeVideoViaGramJS, duplicateClipNovaVideo, attachThumbnail, getTelegramFileUrl };
