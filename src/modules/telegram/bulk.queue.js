@@ -36,11 +36,12 @@ const sendVideoResult = async (ctx, chatId, result) => {
   try {
     if (result.skipped) {
       const photoUrl = result.thumbnailUrl || DEFAULT_THUMBNAIL_URL;
-      const baseCaption = result.message || '✅ Already Imported';
-      // Add link to caption if exists
-      const fullCaption = result.shareUrl 
-        ? `${baseCaption}\n\n🔗 ${result.shareUrl}`
-        : `${baseCaption}\n\nUse /videos to find your link.`;
+      // message already contains shareUrl — don't add link again
+      const fullCaption = result.message
+        ? result.message
+        : result.shareUrl
+          ? `✅ Already Imported\n\n🔗 ${result.shareUrl}`
+          : `✅ Already Imported\n\nUse /videos to find your link.`;
 
       if (photoUrl) {
         await ctx.telegram.sendPhoto(chatId, photoUrl, { 
@@ -56,18 +57,13 @@ const sendVideoResult = async (ctx, chatId, result) => {
     } else if (result.success !== false) {
       const photoUrl = result.thumbnailUrl || DEFAULT_THUMBNAIL_URL;
 
-      // Build caption with link included
-      let baseCaption;
-      if (result.message) {
-        baseCaption = result.message;
-      } else {
-        baseCaption = `✅ Upload Complete\n\n🎬 ${result.title}`;
-      }
-
-      // Add share link to caption
-      const fullCaption = result.shareUrl 
-        ? `${baseCaption}\n\n🔗 ${result.shareUrl}`
-        : baseCaption;
+      // Build caption — message from pipeline already contains the share link
+      // Do NOT add shareUrl again to avoid duplicate link
+      const fullCaption = result.message 
+        ? result.message
+        : result.shareUrl 
+          ? `✅ Upload Complete\n\n🎬 ${result.title}\n\n🔗 ${result.shareUrl}`
+          : `✅ Upload Complete\n\n🎬 ${result.title}`;
 
       if (photoUrl) {
         await ctx.telegram.sendPhoto(chatId, photoUrl, { 
