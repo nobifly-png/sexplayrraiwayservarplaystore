@@ -368,8 +368,15 @@ class TelegramBotService {
 
       let message;
       if (user.cleanOutput) {
-        // Clean Output: just the raw link
-        message = shareUrl;
+        // Clean Output: no "Share Link Created" prefix, no filename — header + link + footer only
+        message = '';
+        if (user.headerEnabled && user.telegramHeader) {
+          message += `${user.telegramHeader}\n\n`;
+        }
+        message += shareUrl;
+        if (user.footerEnabled && user.telegramFooter) {
+          message += `\n\n${user.telegramFooter}`;
+        }
       } else {
         message = '✅ Share Link Created!\n\n';
         if (user.headerEnabled && user.telegramHeader) {
@@ -438,8 +445,8 @@ class TelegramBotService {
       `${user.telegramFooter || '(not set)'}\n\n` +
       `✂️ Clean Output: ${cleanStatus}\n` +
       (user.cleanOutput
-        ? '  → Only the share link is sent (no title, no header/footer)\n\n'
-        : '  → Full message with title, header & footer is sent\n\n') +
+        ? '  → Title & "Upload Complete" hidden — only header, link & footer sent\n\n'
+        : '  → Full message with "Upload Complete", title, header & footer sent\n\n') +
       '💡 Tip: Enable Clean Output to get just the raw link after every upload.';
 
     if (ctx.callbackQuery) {

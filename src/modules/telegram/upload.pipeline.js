@@ -28,10 +28,17 @@ const formatMessageWithHeaderFooter = async (userId, shareUrl, videoTitle) => {
     const user = await User.findById(userId);
     if (!user) return `✅ Upload Complete\n\n📹 ${videoTitle}\n🔗 ${shareUrl}`;
 
-    // Clean Output: when enabled, return only the share link — no header, no footer,
-    // no "✅ Upload Complete" prefix, no filename. Just the raw URL.
+    // Clean Output: skip "✅ Upload Complete" and filename — show header + link + footer only
     if (user.cleanOutput) {
-      return shareUrl;
+      let message = '';
+      if (user.headerEnabled && user.telegramHeader) {
+        message += `${user.telegramHeader}\n\n`;
+      }
+      message += shareUrl;
+      if (user.footerEnabled && user.telegramFooter) {
+        message += `\n\n${user.telegramFooter}`;
+      }
+      return message;
     }
 
     let message = '✅ Upload Complete\n\n';
