@@ -60,6 +60,10 @@ const userSchema = new mongoose.Schema({
   footerEnabled: {
     type: Boolean,
     default: false
+  },
+  cleanOutput: {
+    type: Boolean,
+    default: false
   }
 }, {
   timestamps: true

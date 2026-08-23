@@ -223,6 +223,7 @@ class TelegramBotService {
     bot.action('set_footer', (ctx) => this._safe(ctx, () => this._onSetFooter(ctx)));
     bot.action('toggle_header', (ctx) => this._safe(ctx, () => this._onToggleHeader(ctx)));
     bot.action('toggle_footer', (ctx) => this._safe(ctx, () => this._onToggleFooter(ctx)));
+    bot.action('toggle_clean_output', (ctx) => this._safe(ctx, () => this._onToggleCleanOutput(ctx)));
 
     // Single entry point for ALL non-command messages
     bot.on('message', (ctx) => this._safe(ctx, () => this._onAnyMessage(ctx)));
@@ -362,18 +363,22 @@ class TelegramBotService {
       const link = await linkService.createLink(session.userId, videoId);
       const shareUrl = `${FRONTEND_URL}/watch/${link.shortCode}`;
 
-      // Get user settings for header/footer
+      // Get user settings for header/footer/cleanOutput
       const user = await User.findById(session.userId);
-      let message = '✅ Share Link Created!\n\n';
 
-      if (user.headerEnabled && user.telegramHeader) {
-        message += `${user.telegramHeader}\n\n`;
-      }
-
-      message += `🔗 ${shareUrl}`;
-
-      if (user.footerEnabled && user.telegramFooter) {
-        message += `\n\n${user.telegramFooter}`;
+      let message;
+      if (user.cleanOutput) {
+        // Clean Output: just the raw link
+        message = shareUrl;
+      } else {
+        message = '✅ Share Link Created!\n\n';
+        if (user.headerEnabled && user.telegramHeader) {
+          message += `${user.telegramHeader}\n\n`;
+        }
+        message += `🔗 ${shareUrl}`;
+        if (user.footerEnabled && user.telegramFooter) {
+          message += `\n\n${user.telegramFooter}`;
+        }
       }
 
       await ctx.reply(message, noPreview());
@@ -411,8 +416,9 @@ class TelegramBotService {
   async _showSettingsMenu(ctx, userId) {
     const user = await User.findById(userId);
 
-    const headerStatus = user.headerEnabled ? '✅ Enabled' : '❌ Disabled';
-    const footerStatus = user.footerEnabled ? '✅ Enabled' : '❌ Disabled';
+    const headerStatus    = user.headerEnabled  ? '✅ Enabled' : '❌ Disabled';
+    const footerStatus    = user.footerEnabled  ? '✅ Enabled' : '❌ Disabled';
+    const cleanStatus     = user.cleanOutput    ? '✅ ON'      : '❌ OFF';
 
     const keyboard = Markup.inlineKeyboard([
       [Markup.button.callback(`📄 Header: ${headerStatus}`, 'toggle_header')],
@@ -420,16 +426,21 @@ class TelegramBotService {
       [
         Markup.button.callback('✏️ Set Header Text', 'set_header'),
         Markup.button.callback('✏️ Set Footer Text', 'set_footer')
-      ]
+      ],
+      [Markup.button.callback(`✂️ Clean Output: ${cleanStatus}`, 'toggle_clean_output')]
     ]);
 
     const message =
-      '⚙️ Header & Footer Settings\n\n' +
-      `Current Header: ${headerStatus}\n` +
+      '⚙️ Bot Output Settings\n\n' +
+      `📄 Header: ${headerStatus}\n` +
       `${user.telegramHeader || '(not set)'}\n\n` +
-      `Current Footer: ${footerStatus}\n` +
+      `📝 Footer: ${footerStatus}\n` +
       `${user.telegramFooter || '(not set)'}\n\n` +
-      '💡 Header/Footer will be automatically added to all your video uploads!';
+      `✂️ Clean Output: ${cleanStatus}\n` +
+      (user.cleanOutput
+        ? '  → Only the share link is sent (no title, no header/footer)\n\n'
+        : '  → Full message with title, header & footer is sent\n\n') +
+      '💡 Tip: Enable Clean Output to get just the raw link after every upload.';
 
     if (ctx.callbackQuery) {
       await ctx.editMessageText(message, { disable_web_page_preview: true, ...keyboard });
@@ -464,6 +475,18 @@ class TelegramBotService {
 
     const user = await User.findById(session.userId);
     user.footerEnabled = !user.footerEnabled;
+    await user.save();
+
+    await this._showSettingsMenu(ctx, session.userId);
+  }
+
+  async _onToggleCleanOutput(ctx) {
+    await ctx.answerCbQuery();
+    const session = getSession(ctx.chat.id);
+    if (!session.userId) return;
+
+    const user = await User.findById(session.userId);
+    user.cleanOutput = !user.cleanOutput;
     await user.save();
 
     await this._showSettingsMenu(ctx, session.userId);
