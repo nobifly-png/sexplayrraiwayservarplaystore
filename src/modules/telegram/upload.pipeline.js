@@ -45,68 +45,124 @@ const formatMessageWithHeaderFooter = async (userId, shareUrl, videoTitle) => {
   }
 };
 
-/* ─── Telegram file URL ─────────────────────────────────────────────────── */
-const getTelegramFileUrl = async (botToken, fileId) => {
-  // Use Local Bot API if configured (supports files >20MB up to 2GB)
-  // Otherwise use standard API (20MB limit)
-  const useLocalApi = telegramConfig.useLocalApi && telegramConfig.localApiUrl;
-  const baseUrl = useLocalApi 
-    ? telegramConfig.localApiUrl 
-    : 'https://api.telegram.org';
-  
-  logger.info({ 
-    fileId, 
-    useLocalApi, 
-    apiUrl: baseUrl 
-  }, 'Pipeline: fetching file info');
-  
+/* ─── Helper: getFile from one API base ─────────────────────────────────── */
+const _getFileFromBase = (botToken, fileId, apiBase) => {
   return new Promise((resolve, reject) => {
-    const url = `${baseUrl}/bot${botToken}/getFile?file_id=${fileId}`;
+    const url = `${apiBase}/bot${botToken}/getFile?file_id=${fileId}`;
     const protocol = url.startsWith('https') ? https : http;
-    
-    protocol.get(url, { timeout: 30000 }, (res) => {
+
+    const req = protocol.get(url, { timeout: 30000 }, (res) => {
       let data = '';
       res.on('data', c => { data += c; });
       res.on('end', () => {
         try {
           const parsed = JSON.parse(data);
           if (!parsed.ok || !parsed.result?.file_path) {
-            const errMsg = parsed.description || 'getFile failed';
-            
-            // Check if it's a file size error
-            if (errMsg.toLowerCase().includes('too big') || errMsg.toLowerCase().includes('too large') || errMsg.toLowerCase().includes('file is too big')) {
-              return reject(new Error(
-                'File too large for standard API (20MB limit). Solutions: 1. Send video DIRECTLY to bot (do not forward from channels). 2. Send as File instead of Video. 3. Compress video to under 20MB. Note: Forwarded videos from other channels cannot exceed 20MB.'
-              ));
-            }
-            
-            return reject(new Error(errMsg));
+            return reject(new Error(parsed.description || 'getFile failed'));
           }
-          
-          // Build download URL
-          const downloadUrl = `${baseUrl}/file/bot${botToken}/${parsed.result.file_path}`;
-          
-          logger.info({ 
-            filePath: parsed.result.file_path,
-            fileSize: parsed.result.file_size,
-            fileSizeMB: ((parsed.result.file_size || 0) / 1024 / 1024).toFixed(2),
-            usingLocalApi: useLocalApi
-          }, 'Pipeline: file download URL ready');
-          
+
+          // ── Build correct download URL ───────────────────────────────────
+          // Local Bot API: file_path is an ABSOLUTE filesystem path
+          //   e.g.  /var/lib/telegram-bot-api/<TOKEN>/files/video_123.mp4
+          //   Download URL → <localApiBase><filePath>         (no /file/bot<TOKEN>/ prefix)
+          //
+          // Standard API: file_path is a RELATIVE path
+          //   e.g.  videos/file_0.mp4
+          //   Download URL → https://api.telegram.org/file/bot<TOKEN>/<filePath>
+          const filePath = parsed.result.file_path;
+          const isAbsolutePath = filePath.startsWith('/');
+
+          let downloadUrl;
+          if (isAbsolutePath) {
+            // Local Bot API absolute path — serve directly (no token in URL)
+            downloadUrl = `${apiBase}${filePath}`;
+          } else {
+            downloadUrl = `${apiBase}/file/bot${botToken}/${filePath}`;
+          }
+
           resolve({
             downloadUrl,
-            filePath: parsed.result.file_path,
-            fileSize: parsed.result.file_size || 0
+            filePath,
+            fileSize: parsed.result.file_size || 0,
+            apiBase
           });
-        } catch { 
-          reject(new Error('Failed to parse Telegram getFile response')); 
+        } catch {
+          reject(new Error('Failed to parse Telegram getFile response'));
         }
       });
       res.on('error', reject);
-    }).on('error', reject).on('timeout', () => { 
-      reject(new Error('Telegram getFile timed out')); 
+    });
+    req.on('error', reject);
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Telegram getFile timed out'));
     });
   });
+};
+
+/* ─── Telegram file URL ─────────────────────────────────────────────────── */
+const getTelegramFileUrl = async (botToken, fileId) => {
+  const useLocalApi = telegramConfig.useLocalApi && telegramConfig.localApiUrl;
+
+  // Always try local API first when configured
+  if (useLocalApi) {
+    const localBase = telegramConfig.localApiUrl.replace(/\/+$/, '');
+    logger.info({ fileId, apiUrl: localBase }, 'Pipeline: fetching file info via local API');
+
+    try {
+      const result = await _getFileFromBase(botToken, fileId, localBase);
+      logger.info({
+        filePath: result.filePath,
+        isAbsolute: result.filePath.startsWith('/'),
+        downloadUrl: result.downloadUrl.substring(0, 120),
+        fileSizeMB: (result.fileSize / 1024 / 1024).toFixed(2)
+      }, 'Pipeline: file URL ready (local API)');
+      return result;
+    } catch (localErr) {
+      logger.warn({ err: localErr.message, fileId }, 'Pipeline: local API getFile failed — trying standard API fallback');
+
+      // Fallback to standard Telegram API (only works for files ≤ 20MB)
+      try {
+        const result = await _getFileFromBase(botToken, fileId, 'https://api.telegram.org');
+        logger.info({
+          filePath: result.filePath,
+          fileSizeMB: (result.fileSize / 1024 / 1024).toFixed(2)
+        }, 'Pipeline: file URL ready (standard API fallback)');
+        return result;
+      } catch (stdErr) {
+        // Check for file-too-big error from standard API
+        const msg = stdErr.message || '';
+        if (msg.toLowerCase().includes('too big') || msg.toLowerCase().includes('too large')) {
+          throw new Error(
+            'File too large for standard API (20MB limit) and local API is unreachable. ' +
+            'Check that the telegram-bot-api Railway service is running and accessible.'
+          );
+        }
+        throw new Error(`Upload failed: local API error: ${localErr.message} | standard API error: ${stdErr.message}`);
+      }
+    }
+  }
+
+  // Local API not configured — use standard API only
+  logger.info({ fileId, apiUrl: 'https://api.telegram.org' }, 'Pipeline: fetching file info via standard API');
+  try {
+    const result = await _getFileFromBase(botToken, fileId, 'https://api.telegram.org');
+    logger.info({
+      filePath: result.filePath,
+      fileSizeMB: (result.fileSize / 1024 / 1024).toFixed(2)
+    }, 'Pipeline: file URL ready (standard API)');
+    return result;
+  } catch (err) {
+    const msg = err.message || '';
+    if (msg.toLowerCase().includes('too big') || msg.toLowerCase().includes('too large')) {
+      throw new Error(
+        'File too large for standard API (20MB limit). ' +
+        'Solutions: 1. Configure TELEGRAM_USE_LOCAL_API=true with a local bot API server. ' +
+        '2. Send video as File instead of Video. 3. Compress to under 20MB.'
+      );
+    }
+    throw err;
+  }
 };
 
 /* ─── Attach thumbnail (never throws) ──────────────────────────────────── */

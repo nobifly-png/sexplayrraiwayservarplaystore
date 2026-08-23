@@ -27,7 +27,7 @@ const streamUrlToR2 = (downloadUrl, storageKey, mimeType, expectedSize = null) =
     let downloadStarted = false;
 
     // Start download
-    const request = proto.get(downloadUrl, { timeout: 120000 }, (res) => {
+    const request = proto.get(downloadUrl, { timeout: 600000 }, (res) => {  // 10 min timeout for large files
       if (res.statusCode !== 200) {
         res.resume();
         passThrough.destroy();
@@ -77,6 +77,9 @@ const streamUrlToR2 = (downloadUrl, storageKey, mimeType, expectedSize = null) =
 
     // Upload stream to R2 using multipart upload
     const isVideo = (mimeType || '').startsWith('video/');
+
+    // 15-minute hard timeout: if upload stalls, abort and reject
+    let uploadTimeoutId;
     
     const upload = new Upload({
       client: r2Client,
@@ -88,12 +91,19 @@ const streamUrlToR2 = (downloadUrl, storageKey, mimeType, expectedSize = null) =
         ContentDisposition: 'inline',
         CacheControl: isVideo ? 'public, max-age=31536000' : 'public, max-age=86400'
       },
-      queueSize: 4, // concurrent parts
+      queueSize: 4,         // concurrent parts
       partSize: 10 * 1024 * 1024, // 10MB parts (minimum for multipart)
-      leavePartsOnError: false // cleanup on failure
+      leavePartsOnError: false    // cleanup on failure
     });
 
     upload.on('httpUploadProgress', (progress) => {
+      // Start the 15-min stall timeout on first progress event
+      if (!uploadTimeoutId) {
+        uploadTimeoutId = setTimeout(() => {
+          upload.abort().catch(() => {});
+          passThrough.destroy(new Error('Upload stalled — 15 minute timeout reached'));
+        }, 15 * 60 * 1000);
+      }
       if (progress.loaded && progress.total) {
         const percent = ((progress.loaded / progress.total) * 100).toFixed(1);
         logger.info({ 
@@ -103,13 +113,14 @@ const streamUrlToR2 = (downloadUrl, storageKey, mimeType, expectedSize = null) =
         }, 'StreamToR2: upload progress');
       }
     });
-
     upload.done()
       .then(() => {
+        clearTimeout(uploadTimeoutId);
         logger.info({ storageKey, totalBytes }, 'StreamToR2: complete');
         resolve({ fileSize: totalBytes, storageKey, url: `${publicBaseUrl}/${storageKey}` });
       })
       .catch((err) => {
+        clearTimeout(uploadTimeoutId);
         logger.error({ err: err.message, storageKey }, 'StreamToR2: upload failed');
         // Ensure request is aborted
         if (request) {
