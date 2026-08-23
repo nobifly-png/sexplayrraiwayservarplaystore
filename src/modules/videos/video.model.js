@@ -58,7 +58,7 @@ const videoSchema = new mongoose.Schema({
   },
   uploadSource: {
     type: String,
-    enum: ['WEB', 'TELEGRAM_DIRECT', 'TELEGRAM_LINK', 'TELEGRAM_RESHARE', 'API'],
+    enum: ['WEB', 'TELEGRAM_DIRECT', 'TELEGRAM_LINK', 'TELEGRAM_RESHARE', 'TELEGRAM_GRAMJS', 'API'],
     default: 'WEB'
   },
   duplicatedFrom: {
