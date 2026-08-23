@@ -225,13 +225,11 @@ const _handleClipNovaLink = async (ctx, session, shortCode, pendingThumb) => {
 
     const thumbUrl = video.thumbnailUrl || process.env.DEFAULT_THUMBNAIL_URL || null;
 
-    // Build full caption WITH link included
-    const fullCaption = message || (wasAlreadyOwned
-      ? `🔁 You already have this video!\n\n🎬 ${video.title}`
-      : `✅ Upload Complete\n\n🎬 ${video.title}`);
-    
-    // Add share link to caption (if exists)
-    const finalCaption = shareUrl ? `${fullCaption}\n\n🔗 ${shareUrl}` : fullCaption;
+    // message from formatMessageWithHeaderFooter already contains the share link
+    // Do NOT add shareUrl again — it causes duplicate link
+    const finalCaption = message || (wasAlreadyOwned
+      ? `🔁 You already have this video!\n\n🎬 ${video.title}${shareUrl ? `\n\n🔗 ${shareUrl}` : ''}`
+      : `✅ Upload Complete\n\n🎬 ${video.title}${shareUrl ? `\n\n🔗 ${shareUrl}` : ''}`);
 
     await ctx.telegram.deleteMessage(chatId, ackMsg.message_id).catch(() => {});
 
