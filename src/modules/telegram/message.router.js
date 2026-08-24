@@ -215,7 +215,7 @@ const _handleClipNovaLink = async (ctx, session, shortCode, pendingThumb) => {
 
   logger.info({ chatId, shortCode }, 'MessageRouter: duplicate pipeline triggered');
 
-  const ackMsg = await ctx.reply('⏳ Processing ClipNova link...');
+  const ackMsg = await ctx.reply('⏳ Processing...');
 
   try {
     const { video, shareUrl, message, wasAlreadyOwned } = await duplicateClipNovaVideo({
