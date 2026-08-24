@@ -119,40 +119,37 @@ const routeMessage = async (ctx, session, { ingestService, linkService } = {}) =
   const content = (msg.text || msg.caption || '').trim();
 
   // ── PRIORITY 1: ClipNova link detection (text OR caption) ────────────────
-  // FORWARDED post (msg.forward_from_chat): Process individually with original thumbnail
-  // USER-SENT multiple links: Batch process together
   if (content) {
     const allDetected = detectAllVideoLinks(msg);
     const clipnovaLinks = allDetected.filter(d => d.source === SUPPORTED_SOURCES.CLIPNOVA);
     
     if (clipnovaLinks.length > 0) {
-      const isForwarded = !!msg.forward_from_chat;
+      // KEY RULE: If this message has BOTH photo + link → process IMMEDIATELY (no queue).
+      // This handles forwarded channel posts where each post has its own thumbnail + link.
+      // Batching these would mix thumbnails across videos.
+      const hasPhotoWithLink = !!msg.photo?.length;
+      const isForwarded = !!(msg.forward_from_chat || msg.forward_from);
       
-      logger.info({ chatId, count: clipnovaLinks.length, isForwarded }, 'MessageRouter: Zexgram link(s) detected');
-      
-      // FORWARDED: Always process immediately, never batch (each forwarded post has its own thumbnail)
-      if (isForwarded) {
+      if (hasPhotoWithLink || isForwarded) {
+        // Download thumbnail from this message (if any)
         let overrideThumb = null;
         if (msg.photo?.length) {
-          logger.info({ chatId }, 'MessageRouter: forwarded thumbnail attached');
           overrideThumb = await downloadTelegramPhoto(msg.photo);
+          logger.info({ chatId }, 'MessageRouter: photo+link detected → immediate process');
+        } else {
+          logger.info({ chatId }, 'MessageRouter: forwarded post → immediate process');
         }
         
-        // Process ALL links in THIS forwarded message immediately
+        // Process each link immediately — no queue, no batching
         for (const detected of clipnovaLinks) {
           await _handleClipNovaLink(ctx, session, detected.shortCode, overrideThumb);
         }
         return true;
       }
       
-      // NOT FORWARDED (user manually sent): Batch process with shared thumbnail
-      let overrideThumb = null;
-      if (msg.photo?.length) {
-        logger.info({ chatId }, 'MessageRouter: thumbnail attached');
-        overrideThumb = await downloadTelegramPhoto(msg.photo);
-      }
-      
-      const pendingThumb = overrideThumb || consumePending(chatId);
+      // Plain text with link(s) only (no photo) → batch queue with shared pending thumbnail
+      logger.info({ chatId, count: clipnovaLinks.length }, 'MessageRouter: text link(s) → batch queue');
+      const pendingThumb = consumePending(chatId);
       
       clipnovaLinks.forEach(detected => {
         enqueue(ctx, String(chatId), `Link ${detected.shortCode}`, async () => {
