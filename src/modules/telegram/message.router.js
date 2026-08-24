@@ -198,9 +198,14 @@ const _handlePhotoOnly = async (ctx, session) => {
 
   const downloaded = await downloadTelegramPhoto(ctx.message.photo);
   if (downloaded) {
-    setPending(ctx.chat.id, downloaded.buffer, downloaded.mimeType);
-    logger.info({ chatId: ctx.chat.id }, 'MessageRouter: pending thumbnail cached');
-    await ctx.reply('🖼 Thumbnail received! Now send your video or ClipNova link within 5 minutes.');
+    const replaced = setPending(ctx.chat.id, downloaded.buffer, downloaded.mimeType);
+    logger.info({ chatId: ctx.chat.id, replaced }, 'MessageRouter: pending thumbnail cached');
+    
+    if (replaced) {
+      await ctx.reply('🖼 New thumbnail set! Previous thumbnail cleared.\n\n💡 This thumbnail will apply to all videos you send (until cleared with /clearthumb or 5min expiry).');
+    } else {
+      await ctx.reply('🖼 Thumbnail set! Send videos — this thumbnail will apply to all of them.\n\n💡 Send a new photo to replace, or use /clearthumb to clear.');
+    }
   } else {
     await ctx.reply('⚠️ Could not process thumbnail. Please try again.');
   }

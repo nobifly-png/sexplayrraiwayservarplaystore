@@ -216,6 +216,7 @@ class TelegramBotService {
     bot.command('imports', (ctx) => this._safe(ctx, () => this._onImports(ctx)));
     bot.command('link', (ctx) => this._safe(ctx, () => this._onLink(ctx)));
     bot.command('cancel', (ctx) => this._safe(ctx, () => this._onCancel(ctx)));
+    bot.command('clearthumb', (ctx) => this._safe(ctx, () => this._onClearThumb(ctx)));
 
     // Inline button callbacks for settings
     bot.action('settings_menu', (ctx) => this._safe(ctx, () => this._onSettingsMenu(ctx)));
@@ -251,7 +252,7 @@ class TelegramBotService {
       '2. Forward any video directly to this bot\n' +
       '3. Bot uploads to R2 and gives you a share link\n' +
       '4. Share the link — earn on every view!\n\n' +
-      '💡 Tip: Send a photo BEFORE a video to set a custom thumbnail!',
+      '💡 Tip: Send a photo BEFORE videos to set a custom thumbnail for all uploads!',
       { disable_web_page_preview: true, ...Markup.removeKeyboard() }
     );
   }
@@ -272,7 +273,9 @@ class TelegramBotService {
       '• Forward a Zexgram post (photo+link) → duplicate instantly\n' +
       '• Send a Zexgram /watch/ link → duplicate to your account\n' +
       '• Send TeraBox/Dailymotion links → import as external ref\n' +
-      '• Send a photo FIRST → sets thumbnail for next upload\n\n' +
+      '• Send a photo FIRST → sets thumbnail for ALL next uploads\n\n' +
+      '🖼 Thumbnail\n' +
+      '/clearthumb — Clear cached thumbnail\n\n' +
       '/cancel — Cancel current action',
       noPreview()
     );
@@ -287,6 +290,13 @@ class TelegramBotService {
     } else {
       await ctx.reply('Nothing to cancel.');
     }
+  }
+
+  /* ─── /clearthumb ──────────────────────────────────────────────────────── */
+  async _onClearThumb(ctx) {
+    const { clearPending } = require('./pendingThumb.cache');
+    clearPending(ctx.chat.id);
+    await ctx.reply('✅ Thumbnail cache cleared. Next video will use auto-generated thumbnail.');
   }
 
   /* ─── /login ──────────────────────────────────────────────────────────── */
@@ -591,7 +601,7 @@ class TelegramBotService {
     await ctx.reply(
       `✅ Logged in as ${result.user.name}!\n\n` +
       "Now forward any video — I'll upload it to R2 and give you a share link automatically!\n\n" +
-      '💡 Tip: Send a photo first to set a custom thumbnail.'
+      '💡 Tip: Send a photo first to set a custom thumbnail for all uploads.'
     );
   }
 
