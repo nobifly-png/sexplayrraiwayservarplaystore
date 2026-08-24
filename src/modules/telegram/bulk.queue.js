@@ -12,7 +12,8 @@ const getQueue = (chatId) => {
     userQueues.set(chatId, {
       queue: [], running: 0, total: 0,
       done: 0, failed: 0, skipped: 0,
-      flushTimer: null
+      flushTimer: null,
+      results: []  // collect all results for batch send
     });
   }
   return userQueues.get(chatId);
@@ -27,8 +28,112 @@ const clearQueue = (chatId) => {
 const DEFAULT_THUMBNAIL_URL = process.env.DEFAULT_THUMBNAIL_URL || null;
 
 /**
- * Send per-video result as its own Telegram message.
- * Photo + caption with link included in single message.
+ * Send batch results as a SINGLE message with all links.
+ * Format: header + all links + footer (from first video's user settings).
+ */
+const sendBatchResults = async (ctx, chatId, results) => {
+  if (!results.length) return;
+  
+  const User = require('../users/user.model');
+  const NO_PREVIEW = { disable_web_page_preview: true };
+  
+  try {
+    // Get user settings from first result
+    const firstResult = results[0];
+    let userId = null;
+    
+    // Extract userId from any result that has it (via session context)
+    // Since we don't have direct access here, we'll parse from the result structure
+    // Alternative: pass userId explicitly through the queue
+    
+    // For now, build message without user-specific header/footer
+    // (Will enhance this if userId is needed)
+    
+    const successResults = results.filter(r => r.success !== false && !r.skipped);
+    const skippedResults = results.filter(r => r.skipped);
+    const failedResults = results.filter(r => r.success === false);
+    
+    if (successResults.length === 0 && skippedResults.length === 0) {
+      // All failed — send individual error messages
+      for (const r of failedResults) {
+        await ctx.telegram.sendMessage(chatId, `❌ ${r.title || 'Upload'} failed: ${r.error || 'Unknown error'}`).catch(() => {});
+        await sleep(INTER_MSG_DELAY_MS);
+      }
+      return;
+    }
+    
+    // Extract header/footer from first successful result's message
+    let header = '';
+    let footer = '';
+    
+    if (successResults.length > 0 && successResults[0].message) {
+      const msg = successResults[0].message;
+      const urlMatch = msg.match(/(https?:\/\/[^\s]+)/);
+      if (urlMatch) {
+        const url = urlMatch[0];
+        const parts = msg.split(url);
+        header = parts[0].trim();
+        footer = parts[1] ? parts[1].trim() : '';
+      }
+    }
+    
+    // Build combined message
+    let combinedMessage = '';
+    
+    if (header) {
+      combinedMessage += `${header}\n\n`;
+    }
+    
+    // Add all successful links
+    successResults.forEach(r => {
+      if (r.shareUrl) {
+        combinedMessage += `${r.shareUrl}\n`;
+      }
+    });
+    
+    if (footer) {
+      combinedMessage += `\n${footer}`;
+    }
+    
+    // Send the combined message with thumbnail from first result
+    const photoUrl = successResults[0]?.thumbnailUrl || DEFAULT_THUMBNAIL_URL;
+    
+    if (photoUrl) {
+      await ctx.telegram.sendPhoto(chatId, photoUrl, {
+        caption: combinedMessage.trim(),
+        ...NO_PREVIEW
+      }).catch(() =>
+        ctx.telegram.sendMessage(chatId, combinedMessage.trim(), NO_PREVIEW).catch(() => {})
+      );
+    } else {
+      await ctx.telegram.sendMessage(chatId, combinedMessage.trim(), NO_PREVIEW).catch(() => {});
+    }
+    
+    // Send individual messages for skipped/failed if any
+    if (skippedResults.length > 0) {
+      await sleep(INTER_MSG_DELAY_MS);
+      const skippedMsg = `🔁 ${skippedResults.length} video(s) skipped (duplicates)`;
+      await ctx.telegram.sendMessage(chatId, skippedMsg).catch(() => {});
+    }
+    
+    if (failedResults.length > 0) {
+      await sleep(INTER_MSG_DELAY_MS);
+      for (const r of failedResults) {
+        await ctx.telegram.sendMessage(chatId, `❌ ${r.title || 'Upload'} failed: ${r.error || 'Unknown error'}`).catch(() => {});
+      }
+    }
+    
+  } catch (err) {
+    logger.error({ err, chatId }, 'BulkQueue: failed to send batch results');
+    // Fallback: send individual messages
+    for (const result of results) {
+      await sendVideoResult(ctx, chatId, result).catch(() => {});
+    }
+  }
+};
+
+/**
+ * Send individual video result (fallback for single uploads or errors).
  */
 const sendVideoResult = async (ctx, chatId, result) => {
   await sleep(INTER_MSG_DELAY_MS);
@@ -36,7 +141,6 @@ const sendVideoResult = async (ctx, chatId, result) => {
   try {
     if (result.skipped) {
       const photoUrl = result.thumbnailUrl || DEFAULT_THUMBNAIL_URL;
-      // message already contains shareUrl — don't add link again
       const fullCaption = result.message
         ? result.message
         : result.shareUrl
@@ -56,9 +160,6 @@ const sendVideoResult = async (ctx, chatId, result) => {
 
     } else if (result.success !== false) {
       const photoUrl = result.thumbnailUrl || DEFAULT_THUMBNAIL_URL;
-
-      // Build caption — message from pipeline already contains the share link
-      // Do NOT add shareUrl again to avoid duplicate link
       const fullCaption = result.message 
         ? result.message
         : result.shareUrl 
@@ -88,12 +189,11 @@ const sendVideoResult = async (ctx, chatId, result) => {
 const sendSummary = async (ctx, chatId, q) => {
   await sleep(INTER_MSG_DELAY_MS);
   const text =
-    `✅ Import Finished\n\n` +
+    `✅ Batch Complete\n\n` +
     `📦 Total: ${q.total}\n` +
     `✅ Uploaded: ${q.done}\n` +
-    `🔁 Skipped duplicates: ${q.skipped}\n` +
-    `❌ Failed: ${q.failed}\n\n` +
-    `Use /videos to see everything.`;
+    `🔁 Skipped: ${q.skipped}\n` +
+    `❌ Failed: ${q.failed}`;
   try {
     await ctx.telegram.sendMessage(chatId, text);
   } catch (_) {}
@@ -103,9 +203,21 @@ const sendSummary = async (ctx, chatId, q) => {
 const checkAllDone = (ctx, chatId) => {
   const q = userQueues.get(chatId);
   if (q && q.running === 0 && q.queue.length === 0) {
-    // Only send summary if bulk (>1 video)
-    if (q.total > 1) sendSummary(ctx, chatId, q).catch(() => {});
-    else clearQueue(chatId);
+    // All jobs complete — send results
+    if (q.total > 1) {
+      // Batch mode: send all links in one message
+      sendBatchResults(ctx, chatId, q.results).catch(() => {});
+      // Then send summary
+      sendSummary(ctx, chatId, q).catch(() => {});
+    } else if (q.total === 1) {
+      // Single upload: send individual result
+      if (q.results.length > 0) {
+        sendVideoResult(ctx, chatId, q.results[0]).catch(() => {});
+      }
+      clearQueue(chatId);
+    } else {
+      clearQueue(chatId);
+    }
   }
 };
 
@@ -120,14 +232,20 @@ const processNext = (ctx, chatId) => {
       .then((result) => {
         if (result.skipped) q.skipped++; else q.done++;
         q.running--;
-        sendVideoResult(ctx, chatId, result).catch(() => {});
+        
+        // Collect result instead of sending immediately
+        q.results.push(result);
+        
         processNext(ctx, chatId);
       })
       .catch((err) => {
         q.failed++;
         q.running--;
         logger.error({ err, chatId }, 'BulkQueue: job failed');
-        sendVideoResult(ctx, chatId, { success: false, title: job.title, error: err.message }).catch(() => {});
+        
+        // Collect failure result
+        q.results.push({ success: false, title: job.title, error: err.message });
+        
         processNext(ctx, chatId);
       })
       .finally(() => checkAllDone(ctx, chatId));
