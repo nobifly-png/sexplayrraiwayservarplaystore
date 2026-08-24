@@ -119,8 +119,8 @@ const routeMessage = async (ctx, session, { ingestService, linkService } = {}) =
   const content = (msg.text || msg.caption || '').trim();
 
   // ── PRIORITY 1: ClipNova link detection (text OR caption) ────────────────
-  // Detect ALL links in message — if multiple Zexgram links, batch-duplicate them
-  // EXCEPT: if forwarded (msg.forward_from_chat exists), process individually with original thumbnail
+  // FORWARDED post (msg.forward_from_chat): Process individually with original thumbnail
+  // USER-SENT multiple links: Batch process together
   if (content) {
     const allDetected = detectAllVideoLinks(msg);
     const clipnovaLinks = allDetected.filter(d => d.source === SUPPORTED_SOURCES.CLIPNOVA);
@@ -130,21 +130,28 @@ const routeMessage = async (ctx, session, { ingestService, linkService } = {}) =
       
       logger.info({ chatId, count: clipnovaLinks.length, isForwarded }, 'MessageRouter: Zexgram link(s) detected');
       
+      // FORWARDED: Always process immediately, never batch (each forwarded post has its own thumbnail)
+      if (isForwarded) {
+        let overrideThumb = null;
+        if (msg.photo?.length) {
+          logger.info({ chatId }, 'MessageRouter: forwarded thumbnail attached');
+          overrideThumb = await downloadTelegramPhoto(msg.photo);
+        }
+        
+        // Process ALL links in THIS forwarded message immediately
+        for (const detected of clipnovaLinks) {
+          await _handleClipNovaLink(ctx, session, detected.shortCode, overrideThumb);
+        }
+        return true;
+      }
+      
+      // NOT FORWARDED (user manually sent): Batch process with shared thumbnail
       let overrideThumb = null;
       if (msg.photo?.length) {
         logger.info({ chatId }, 'MessageRouter: thumbnail attached');
         overrideThumb = await downloadTelegramPhoto(msg.photo);
       }
       
-      // FORWARDED: Process immediately without batching (each has its own thumbnail)
-      if (isForwarded && clipnovaLinks.length === 1) {
-        const detected = clipnovaLinks[0];
-        const pendingThumb = overrideThumb;
-        await _handleClipNovaLink(ctx, session, detected.shortCode, pendingThumb);
-        return true;
-      }
-      
-      // NOT FORWARDED or multiple links: Batch process (user manually sent multiple)
       const pendingThumb = overrideThumb || consumePending(chatId);
       
       clipnovaLinks.forEach(detected => {
