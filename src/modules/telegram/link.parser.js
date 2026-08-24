@@ -93,7 +93,7 @@ const isPrivateUrl = (rawUrl) => {
 
 /**
  * Detect the first supported video link in a message.
- * Returns { url, source } or null.
+ * Returns { url, source, shortCode? } or null.
  */
 const detectVideoLink = (msg) => {
   const text = extractMessageText(msg);
@@ -122,6 +122,53 @@ const detectVideoLink = (msg) => {
 };
 
 /**
+ * Detect ALL supported video links in a message (for batch processing).
+ * Returns array of { url, source, shortCode? } or empty array.
+ */
+const detectAllVideoLinks = (msg) => {
+  const text = extractMessageText(msg);
+  if (!text || text.length > 4096) return [];
+
+  const results = [];
+  const seen = new Set(); // dedup
+
+  for (const { source, pattern } of SOURCE_PATTERNS) {
+    // Use global flag to find all matches
+    const globalPattern = new RegExp(pattern.source, pattern.flags + (pattern.flags.includes('g') ? '' : 'g'));
+    let match;
+    
+    while ((match = globalPattern.exec(text)) !== null) {
+      let url, shortCode;
+      
+      if (source === SUPPORTED_SOURCES.CLIPNOVA) {
+        shortCode = match[1];
+        if (!shortCode) continue;
+        url = match[0].trim().replace(/[\s"'<>?#].*$/, '');
+        if (isPrivateUrl(url)) continue;
+        
+        // Dedup by shortCode
+        if (seen.has(shortCode)) continue;
+        seen.add(shortCode);
+        
+        results.push({ url, source, shortCode });
+      } else {
+        url = match[0].trim().replace(/[.,;!?)]+$/, '');
+        if (isPrivateUrl(url)) continue;
+        if (url.length > 2048) continue;
+        
+        // Dedup by full URL
+        if (seen.has(url)) continue;
+        seen.add(url);
+        
+        results.push({ url, source });
+      }
+    }
+  }
+
+  return results;
+};
+
+/**
  * Normalize a TeraBox URL to a canonical form.
  */
 const normalizeTeraboxUrl = (url) => {
@@ -147,6 +194,7 @@ const normalizeTeraboxUrl = (url) => {
 module.exports = {
   SUPPORTED_SOURCES,
   detectVideoLink,
+  detectAllVideoLinks,
   extractMessageText,
   normalizeTeraboxUrl,
   isPrivateUrl

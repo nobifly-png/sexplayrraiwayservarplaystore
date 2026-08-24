@@ -1,4 +1,4 @@
-const { detectVideoLink, SUPPORTED_SOURCES } = require('./link.parser');
+const { detectVideoLink, SUPPORTED_SOURCES, detectAllVideoLinks } = require('./link.parser');
 const { setPending, consumePending } = require('./pendingThumb.cache');
 const { uploadTelegramVideo, uploadLargeVideoViaGramJS, duplicateClipNovaVideo } = require('./upload.pipeline');
 const { LARGE_FILE_THRESHOLD } = require('./gramjs.client');
@@ -119,25 +119,46 @@ const routeMessage = async (ctx, session, { ingestService, linkService } = {}) =
   const content = (msg.text || msg.caption || '').trim();
 
   // ── PRIORITY 1: ClipNova link detection (text OR caption) ────────────────
+  // Detect ALL links in message — if multiple Zexgram links, batch-duplicate them
   // Must run BEFORE photo handler so forwarded posts with photo+caption work
   if (content) {
-    const detected = detectVideoLink(msg);
-
-    if (detected && detected.source === SUPPORTED_SOURCES.CLIPNOVA) {
-      logger.info({ chatId, shortCode: detected.shortCode }, 'MessageRouter: Zexgram caption detected');
-
+    const allDetected = detectAllVideoLinks(msg);
+    const clipnovaLinks = allDetected.filter(d => d.source === SUPPORTED_SOURCES.CLIPNOVA);
+    
+    if (clipnovaLinks.length > 0) {
+      logger.info({ chatId, count: clipnovaLinks.length }, 'MessageRouter: Zexgram link(s) detected');
+      
       let overrideThumb = null;
       if (msg.photo?.length) {
         logger.info({ chatId }, 'MessageRouter: forwarded thumbnail attached');
         overrideThumb = await downloadTelegramPhoto(msg.photo);
       }
-
+      
       const pendingThumb = overrideThumb || consumePending(chatId);
-      await _handleClipNovaLink(ctx, session, detected.shortCode, pendingThumb);
+      
+      // Enqueue all ClipNova links for batch processing
+      clipnovaLinks.forEach(detected => {
+        enqueue(ctx, String(chatId), `Link ${detected.shortCode}`, async () => {
+          const { video, shareUrl, message, wasAlreadyOwned } = await duplicateClipNovaVideo({
+            userId: session.userId,
+            shortCode: detected.shortCode,
+            pendingThumb: pendingThumb ? { buffer: pendingThumb.buffer, mimeType: pendingThumb.mimeType } : null
+          });
+          return { 
+            title: video.title, 
+            shareUrl, 
+            message, 
+            thumbnailUrl: video.thumbnailUrl || null,
+            skipped: wasAlreadyOwned 
+          };
+        });
+      });
+      
       return true;
     }
 
     // External link (TeraBox, Dailymotion, etc.) — only if no photo/video in same message
+    const detected = allDetected.length > 0 ? allDetected[0] : null;
     if (detected && !msg.photo && !msg.video && !msg.document) {
       await _handleExternalLink(ctx, session, detected, ingestService, linkService);
       return true;
