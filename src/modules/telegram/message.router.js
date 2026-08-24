@@ -120,23 +120,33 @@ const routeMessage = async (ctx, session, { ingestService, linkService } = {}) =
 
   // ── PRIORITY 1: ClipNova link detection (text OR caption) ────────────────
   // Detect ALL links in message — if multiple Zexgram links, batch-duplicate them
-  // Must run BEFORE photo handler so forwarded posts with photo+caption work
+  // EXCEPT: if forwarded (msg.forward_from_chat exists), process individually with original thumbnail
   if (content) {
     const allDetected = detectAllVideoLinks(msg);
     const clipnovaLinks = allDetected.filter(d => d.source === SUPPORTED_SOURCES.CLIPNOVA);
     
     if (clipnovaLinks.length > 0) {
-      logger.info({ chatId, count: clipnovaLinks.length }, 'MessageRouter: Zexgram link(s) detected');
+      const isForwarded = !!msg.forward_from_chat;
+      
+      logger.info({ chatId, count: clipnovaLinks.length, isForwarded }, 'MessageRouter: Zexgram link(s) detected');
       
       let overrideThumb = null;
       if (msg.photo?.length) {
-        logger.info({ chatId }, 'MessageRouter: forwarded thumbnail attached');
+        logger.info({ chatId }, 'MessageRouter: thumbnail attached');
         overrideThumb = await downloadTelegramPhoto(msg.photo);
       }
       
+      // FORWARDED: Process immediately without batching (each has its own thumbnail)
+      if (isForwarded && clipnovaLinks.length === 1) {
+        const detected = clipnovaLinks[0];
+        const pendingThumb = overrideThumb;
+        await _handleClipNovaLink(ctx, session, detected.shortCode, pendingThumb);
+        return true;
+      }
+      
+      // NOT FORWARDED or multiple links: Batch process (user manually sent multiple)
       const pendingThumb = overrideThumb || consumePending(chatId);
       
-      // Enqueue all ClipNova links for batch processing
       clipnovaLinks.forEach(detected => {
         enqueue(ctx, String(chatId), `Link ${detected.shortCode}`, async () => {
           const { video, shareUrl, message, wasAlreadyOwned } = await duplicateClipNovaVideo({
