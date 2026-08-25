@@ -124,32 +124,88 @@ const routeMessage = async (ctx, session, { ingestService, linkService } = {}) =
     const clipnovaLinks = allDetected.filter(d => d.source === SUPPORTED_SOURCES.CLIPNOVA);
     
     if (clipnovaLinks.length > 0) {
-      // KEY RULE: If this message has BOTH photo + link → process IMMEDIATELY (no queue).
-      // This handles forwarded channel posts where each post has its own thumbnail + link.
-      // Batching these would mix thumbnails across videos.
       const hasPhotoWithLink = !!msg.photo?.length;
       const isForwarded = !!(msg.forward_from_chat || msg.forward_from);
-      
-      if (hasPhotoWithLink || isForwarded) {
-        // Download thumbnail from this message (if any)
-        let overrideThumb = null;
-        if (msg.photo?.length) {
-          overrideThumb = await downloadTelegramPhoto(msg.photo);
-          logger.info({ chatId }, 'MessageRouter: photo+link detected → immediate process');
-        } else {
-          logger.info({ chatId }, 'MessageRouter: forwarded post → immediate process');
-        }
-        
-        // Process each link immediately — no queue, no batching
-        // Small delay between multiple links in same message to avoid race conditions
-        for (let i = 0; i < clipnovaLinks.length; i++) {
-          if (i > 0) await new Promise(r => setTimeout(r, 300)); // 300ms between each
-          await _handleClipNovaLink(ctx, session, clipnovaLinks[i].shortCode, overrideThumb);
-        }
+
+      // Download thumbnail from this message (if any)
+      let overrideThumb = null;
+      if (msg.photo?.length) {
+        overrideThumb = await downloadTelegramPhoto(msg.photo);
+      }
+
+      // ── SINGLE link in message ────────────────────────────────────────────
+      // Forward immediately with its own thumbnail (old clean behavior)
+      if (clipnovaLinks.length === 1 && (hasPhotoWithLink || isForwarded)) {
+        logger.info({ chatId }, 'MessageRouter: single photo+link → immediate process');
+        await _handleClipNovaLink(ctx, session, clipnovaLinks[0].shortCode, overrideThumb);
         return true;
       }
-      
-      // Plain text with link(s) only (no photo) → batch queue with shared pending thumbnail
+
+      // ── MULTIPLE links in ONE message ────────────────────────────────────
+      // Process all in parallel → send ONE combined response
+      if (clipnovaLinks.length > 1 && (hasPhotoWithLink || isForwarded)) {
+        logger.info({ chatId, count: clipnovaLinks.length }, 'MessageRouter: multi-link single message → combined response');
+        
+        // Process all links in parallel
+        const results = await Promise.allSettled(
+          clipnovaLinks.map(detected =>
+            duplicateClipNovaVideo({
+              userId: session.userId,
+              shortCode: detected.shortCode,
+              pendingThumb: overrideThumb
+            })
+          )
+        );
+
+        // Collect successful share URLs
+        const shareUrls = [];
+        for (const result of results) {
+          if (result.status === 'fulfilled') {
+            shareUrls.push(result.value.shareUrl);
+          }
+        }
+
+        if (shareUrls.length === 0) {
+          await ctx.reply('❌ All links failed. Please try again.').catch(() => {});
+          return true;
+        }
+
+        // Build combined message using first result's formatted message as template
+        const firstSuccess = results.find(r => r.status === 'fulfilled');
+        const firstMsg = firstSuccess?.value?.message || '';
+        
+        // Extract header/footer from first message, replace single URL with all URLs
+        let combinedMessage;
+        if (firstMsg) {
+          const firstUrl = firstSuccess.value.shareUrl;
+          combinedMessage = firstMsg.replace(firstUrl, shareUrls.join('\n'));
+        } else {
+          combinedMessage = shareUrls.join('\n');
+        }
+
+        // Send ONE message with thumbnail + all links
+        const thumbUrl = firstSuccess?.value?.video?.thumbnailUrl || overrideThumb?.buffer
+          ? null  // overrideThumb is buffer not URL, thumbnail from video record
+          : process.env.DEFAULT_THUMBNAIL_URL || null;
+        
+        const videoThumbUrl = firstSuccess?.value?.video?.thumbnailUrl || process.env.DEFAULT_THUMBNAIL_URL || null;
+
+        if (videoThumbUrl) {
+          await ctx.telegram.sendPhoto(chatId, videoThumbUrl, {
+            caption: combinedMessage,
+            disable_web_page_preview: true
+          }).catch(() =>
+            ctx.telegram.sendMessage(chatId, combinedMessage, { disable_web_page_preview: true }).catch(() => {})
+          );
+        } else {
+          await ctx.telegram.sendMessage(chatId, combinedMessage, { disable_web_page_preview: true }).catch(() => {});
+        }
+
+        return true;
+      }
+
+      // ── Plain text with link(s) only (no photo, not forwarded) ───────────
+      // Batch queue with shared pending thumbnail
       logger.info({ chatId, count: clipnovaLinks.length }, 'MessageRouter: text link(s) → batch queue');
       const pendingThumb = consumePending(chatId);
       
