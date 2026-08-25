@@ -1,11 +1,16 @@
 const ViewLedger = require('../playback/viewLedger.model');
-const PlaybackSession = require('../playback/playbackSession.model');
 const Video = require('../videos/video.model');
 const Link = require('../links/link.model');
+const snapshotService = require('./snapshot.service');
 const { VIEW_TYPE } = require('../../common/enums');
 const { VIEW_TO_COUNTED_RATIO } = require('../../common/constants');
 const { NotFoundError } = require('../../common/errors');
 const mongoose = require('mongoose');
+
+// ---------------------------------------------------------------------------
+// Helpers (still used for admin dashboard + time-series which stay live,
+// and for per-video / per-link which don't have per-entity snapshots)
+// ---------------------------------------------------------------------------
 
 const buildDateMatch = (startDate, endDate) => {
   if (!startDate && !endDate) return {};
@@ -15,62 +20,42 @@ const buildDateMatch = (startDate, endDate) => {
   return { createdAt: range };
 };
 
-/**
- * Convert real views to counted views (4 real views = 1 counted view)
- * Only shows complete views - partial views (0.25, 0.50, 0.75) are hidden
- * Examples: 1 session = 0 views, 4 sessions = 1 view, 7 sessions = 1 view, 8 sessions = 2 views
- */
-const calculateCountedViews = (realViews) => {
-  return Math.floor(realViews / VIEW_TO_COUNTED_RATIO);
-};
+const calculateCountedViews = (realViews) =>
+  Math.floor(realViews / VIEW_TO_COUNTED_RATIO);
 
-/**
- * Calculate display earnings based on complete views only
- * Hides partial earnings until a complete view (4 sessions) is reached
- * Examples: 
- * - 2 sessions × $0.001 = $0.002 earned, but displays $0.000 (hidden)
- * - 4 sessions × $0.001 = $0.004 earned, displays $0.004 (shown)
- * - 6 sessions × $0.001 = $0.006 earned, but displays $0.004 (4 complete sessions only)
- */
 const calculateDisplayEarnings = (realViews, totalEarnings) => {
   const completeViews = Math.floor(realViews / VIEW_TO_COUNTED_RATIO);
-  if (completeViews === 0 || realViews === 0) {
-    return 0; // Hide earnings if no complete view
-  }
-  // Calculate earnings per session, then multiply by complete sessions
-  const earningsPerSession = realViews > 0 ? totalEarnings / realViews : 0;
+  if (completeViews === 0 || realViews === 0) return 0;
+  const earningsPerSession = totalEarnings / realViews;
   return completeViews * VIEW_TO_COUNTED_RATIO * earningsPerSession;
 };
 
+// ---------------------------------------------------------------------------
+
 class AnalyticsService {
-  async getCreatorOverview(creatorId, { startDate, endDate } = {}) {
-    const creatorObjectId = new mongoose.Types.ObjectId(creatorId);
-    const dateMatch = buildDateMatch(startDate, endDate);
+  /**
+   * Creator overview — reads from the 12-hour snapshot.
+   * Views and earnings only update when the cron job fires (00:00 / 12:00 UTC).
+   * Date filters are intentionally ignored here; the snapshot is a full
+   * all-time aggregate. Pass startDate/endDate only when you need live data
+   * (admin use-case handled separately in getAdminDashboard).
+   */
+  async getCreatorOverview(creatorId) {
+    const snapshot = await snapshotService.getSnapshotOrDefault(creatorId);
 
-    const sessionMatch = { creatorId: creatorObjectId, ...dateMatch };
-    const ledgerMatch = { creatorId: creatorObjectId, ...dateMatch };
-
-    const [totalRealViews, validRealViews, rejectedRealViews, earningsResult] = await Promise.all([
-      ViewLedger.countDocuments(ledgerMatch), // Use ViewLedger for total (source of truth)
-      ViewLedger.countDocuments({ ...ledgerMatch, viewType: VIEW_TYPE.VALID }),
-      ViewLedger.countDocuments({ ...ledgerMatch, viewType: VIEW_TYPE.REJECTED }),
-      ViewLedger.aggregate([
-        { $match: { ...ledgerMatch, viewType: VIEW_TYPE.VALID } },
-        { $group: { _id: null, totalEarnings: { $sum: '$earningsAmount' } } }
-      ])
-    ]);
-
-    const totalEarnings = earningsResult[0]?.totalEarnings || 0;
-
-    // Convert to counted views (4:1 ratio) and calculate display earnings
     return {
-      totalViews: calculateCountedViews(totalRealViews),
-      validViews: calculateCountedViews(validRealViews),
-      rejectedViews: calculateCountedViews(rejectedRealViews),
-      totalEarnings: calculateDisplayEarnings(validRealViews, totalEarnings)
+      totalViews: snapshot.totalViews,
+      validViews: snapshot.validViews,
+      rejectedViews: snapshot.rejectedViews,
+      totalEarnings: snapshot.totalEarnings,
+      snapshotAt: snapshot.snapshotAt   // lets frontend show "last updated" if needed
     };
   }
 
+  /**
+   * Per-video analytics — still queries ViewLedger live.
+   * Per-video snapshots are not stored separately; volume per video is lower.
+   */
   async getVideoAnalytics(creatorId, videoId, { startDate, endDate } = {}) {
     const creatorObjectId = new mongoose.Types.ObjectId(creatorId);
     const videoObjectId = new mongoose.Types.ObjectId(videoId);
@@ -81,7 +66,7 @@ class AnalyticsService {
     const ledgerMatch = { videoId: videoObjectId, ...dateMatch };
 
     const [totalRealViews, validRealViews, rejectedRealViews, earningsResult] = await Promise.all([
-      ViewLedger.countDocuments(ledgerMatch), // Use ViewLedger for total (source of truth)
+      ViewLedger.countDocuments(ledgerMatch),
       ViewLedger.countDocuments({ ...ledgerMatch, viewType: VIEW_TYPE.VALID }),
       ViewLedger.countDocuments({ ...ledgerMatch, viewType: VIEW_TYPE.REJECTED }),
       ViewLedger.aggregate([
@@ -92,7 +77,6 @@ class AnalyticsService {
 
     const totalEarnings = earningsResult[0]?.totalEarnings || 0;
 
-    // Convert to counted views (4:1 ratio) and calculate display earnings
     return {
       video: { id: video._id, title: video.title, type: video.type },
       totalViews: calculateCountedViews(totalRealViews),
@@ -102,10 +86,12 @@ class AnalyticsService {
     };
   }
 
+  /**
+   * Time-series chart data — always live (used for graphs, not headline numbers).
+   */
   async getTimeSeries(creatorId, { startDate, endDate, groupBy = 'day' } = {}) {
     const creatorObjectId = new mongoose.Types.ObjectId(creatorId);
     const dateMatch = buildDateMatch(startDate, endDate);
-
     const dateFormat = groupBy === 'month' ? '%Y-%m' : '%Y-%m-%d';
 
     const series = await ViewLedger.aggregate([
@@ -123,13 +109,15 @@ class AnalyticsService {
       { $sort: { '_id.date': 1 } }
     ]);
 
-    // Convert counts to counted views (4:1 ratio)
     return series.map(entry => ({
       ...entry,
       count: calculateCountedViews(entry.count)
     }));
   }
 
+  /**
+   * Per-link analytics — still queries ViewLedger live.
+   */
   async getLinkAnalytics(creatorId, linkId) {
     const creatorObjectId = new mongoose.Types.ObjectId(creatorId);
     const linkObjectId = new mongoose.Types.ObjectId(linkId);
@@ -138,7 +126,7 @@ class AnalyticsService {
     if (!link) throw new NotFoundError('Link not found');
 
     const [totalRealViews, validRealViews, rejectedRealViews, earningsResult] = await Promise.all([
-      ViewLedger.countDocuments({ linkId: linkObjectId }), // Use ViewLedger for total (source of truth)
+      ViewLedger.countDocuments({ linkId: linkObjectId }),
       ViewLedger.countDocuments({ linkId: linkObjectId, viewType: VIEW_TYPE.VALID }),
       ViewLedger.countDocuments({ linkId: linkObjectId, viewType: VIEW_TYPE.REJECTED }),
       ViewLedger.aggregate([
@@ -149,7 +137,6 @@ class AnalyticsService {
 
     const totalEarnings = earningsResult[0]?.totalEarnings || 0;
 
-    // Convert to counted views (4:1 ratio) and calculate display earnings
     return {
       link: { id: link._id, shortCode: link.shortCode, isActive: link.isActive },
       totalViews: calculateCountedViews(totalRealViews),
@@ -159,11 +146,14 @@ class AnalyticsService {
     };
   }
 
+  /**
+   * Admin dashboard — always live (admins need real-time platform data).
+   */
   async getAdminDashboard({ startDate, endDate } = {}) {
     const dateMatch = buildDateMatch(startDate, endDate);
 
     const [totalRealViews, validRealViews, rejectedRealViews, earningsResult, topCreatorsRaw] = await Promise.all([
-      ViewLedger.countDocuments(dateMatch), // Use ViewLedger as source of truth
+      ViewLedger.countDocuments(dateMatch),
       ViewLedger.countDocuments({ ...dateMatch, viewType: VIEW_TYPE.VALID }),
       ViewLedger.countDocuments({ ...dateMatch, viewType: VIEW_TYPE.REJECTED }),
       ViewLedger.aggregate([
@@ -189,14 +179,12 @@ class AnalyticsService {
 
     const totalEarnings = earningsResult[0]?.totalEarnings || 0;
 
-    // Convert top creators views to counted views and display earnings
     const topCreators = topCreatorsRaw.map(creator => ({
       ...creator,
       validViews: calculateCountedViews(creator.validViews),
       earnings: calculateDisplayEarnings(creator.validViews, creator.earnings)
     }));
 
-    // Convert to counted views (4:1 ratio) and calculate display earnings
     return {
       totalViews: calculateCountedViews(totalRealViews),
       validViews: calculateCountedViews(validRealViews),

@@ -5,16 +5,14 @@ const { formatCurrency } = require('../../common/utils');
 class AnalyticsController {
   async getOverview(req, res, next) {
     try {
-      const { startDate, endDate } = req.query;
-      const analytics = await analyticsService.getCreatorOverview(req.user.userId, { startDate, endDate });
-      
-      // Format currency for display
+      // Overview reads from the 12-hour snapshot — date filters not applicable here.
+      const analytics = await analyticsService.getCreatorOverview(req.user.userId);
+
       const formattedAnalytics = {
         ...analytics,
-        totalEarnings: analytics.totalEarnings,
         totalEarningsFormatted: formatCurrency(analytics.totalEarnings)
       };
-      
+
       successResponse(res, formattedAnalytics, 'Analytics retrieved');
     } catch (error) {
       next(error);

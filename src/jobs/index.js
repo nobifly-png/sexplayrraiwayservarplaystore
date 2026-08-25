@@ -4,6 +4,7 @@ const RefreshSession = require('../modules/auth/refreshSession.model');
 const PlaybackSession = require('../modules/playback/playbackSession.model');
 const { UPLOAD_STATUS, PLAYBACK_SESSION_STATUS } = require('../common/enums');
 const logger = require('../config/logger');
+const { startSnapshotJob, stopSnapshotJob } = require('./snapshot.jobs');
 
 const cleanupExpiredUploadIntents = async () => {
   try {
@@ -64,11 +65,15 @@ const startJobs = () => {
   // Every 30 minutes
   cron.schedule('*/30 * * * *', expireStalePlaybackSessions);
 
+  // Every 12 hours — refresh view + earnings snapshots for all creators
+  startSnapshotJob();
+
   logger.info('Background jobs scheduled');
 };
 
 const stopJobs = () => {
   cron.getTasks().forEach((task) => task.stop());
+  stopSnapshotJob();
   logger.info('Background jobs stopped');
 };
 
