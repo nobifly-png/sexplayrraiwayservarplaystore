@@ -141,8 +141,10 @@ const routeMessage = async (ctx, session, { ingestService, linkService } = {}) =
         }
         
         // Process each link immediately — no queue, no batching
-        for (const detected of clipnovaLinks) {
-          await _handleClipNovaLink(ctx, session, detected.shortCode, overrideThumb);
+        // Small delay between multiple links in same message to avoid race conditions
+        for (let i = 0; i < clipnovaLinks.length; i++) {
+          if (i > 0) await new Promise(r => setTimeout(r, 300)); // 300ms between each
+          await _handleClipNovaLink(ctx, session, clipnovaLinks[i].shortCode, overrideThumb);
         }
         return true;
       }
@@ -255,8 +257,6 @@ const _handleClipNovaLink = async (ctx, session, shortCode, pendingThumb) => {
 
   logger.info({ chatId, shortCode }, 'MessageRouter: duplicate pipeline triggered');
 
-  const ackMsg = await ctx.reply('⏳ Processing...');
-
   try {
     const { video, shareUrl, message, wasAlreadyOwned } = await duplicateClipNovaVideo({
       userId: session.userId,
@@ -267,18 +267,15 @@ const _handleClipNovaLink = async (ctx, session, shortCode, pendingThumb) => {
     const thumbUrl = video.thumbnailUrl || process.env.DEFAULT_THUMBNAIL_URL || null;
 
     // message from formatMessageWithHeaderFooter already contains the share link
-    // Do NOT add shareUrl again — it causes duplicate link
     const finalCaption = message || (wasAlreadyOwned
       ? `🔁 You already have this video!\n\n🎬 ${video.title}${shareUrl ? `\n\n🔗 ${shareUrl}` : ''}`
       : `✅ Upload Complete\n\n🎬 ${video.title}${shareUrl ? `\n\n🔗 ${shareUrl}` : ''}`);
 
-    await ctx.telegram.deleteMessage(chatId, ackMsg.message_id).catch(() => {});
-
-    // Send SINGLE message with photo + caption including link
+    // Send result directly — no ackMsg, supports multiple concurrent calls
     if (thumbUrl) {
-      await ctx.telegram.sendPhoto(chatId, thumbUrl, { 
+      await ctx.telegram.sendPhoto(chatId, thumbUrl, {
         caption: finalCaption,
-        disable_web_page_preview: true  // prevents OG preview even with URL in caption
+        disable_web_page_preview: true
       }).catch(() =>
         ctx.telegram.sendMessage(chatId, finalCaption, { disable_web_page_preview: true }).catch(() => {})
       );
@@ -291,8 +288,7 @@ const _handleClipNovaLink = async (ctx, session, shortCode, pendingThumb) => {
     const errMsg = err.message?.includes('not found') || err.message?.includes('not available')
       ? `❌ ${err.message}`
       : '❌ Upload failed. Please try again.';
-    await ctx.telegram.editMessageText(chatId, ackMsg.message_id, undefined, errMsg, {})
-      .catch(() => ctx.reply(errMsg).catch(() => {}));
+    await ctx.reply(errMsg).catch(() => {});
   }
 };
 
