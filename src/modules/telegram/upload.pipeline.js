@@ -48,19 +48,17 @@ const formatMessageWithHeaderFooter = async (userId, shareUrl, videoTitle, origi
     }
 
     // If user's own header/footer are OFF and original caption exists →
-    // use original caption as decoration (replace old link with new link)
+    // replace old link in-place with new link (preserving surrounding text structure)
     if (!userHasOwnDecoration && originalCaption) {
-      // Strip the old zaxgram/zexgram link from caption and replace with new link
-      const cleanedCaption = originalCaption
-        .replace(/https?:\/\/[^\s]+\/(?:watch|(?:api\/)?l)\/[A-Za-z0-9]{4,32}/gi, '')
-        .trim();
-
-      if (cleanedCaption) {
-        // Caption has text besides the link — use it as decoration
-        return `${cleanedCaption}\n\n${shareUrl}`;
+      const linkPattern = /https?:\/\/[^\s]+\/(?:watch|(?:api\/)?l)\/[A-Za-z0-9]{4,32}/gi;
+      
+      if (linkPattern.test(originalCaption)) {
+        // Replace old link with new link at exact same position
+        return originalCaption.replace(linkPattern, shareUrl);
       }
-      // Caption was only a link — just return new link
-      return shareUrl;
+      
+      // Caption has no link (unlikely) — append new link at end
+      return `${originalCaption.trim()}\n\n${shareUrl}`;
     }
 
     // User has own header/footer — use them
