@@ -137,7 +137,8 @@ const routeMessage = async (ctx, session, { ingestService, linkService } = {}) =
       // Forward immediately with its own thumbnail (old clean behavior)
       if (clipnovaLinks.length === 1 && (hasPhotoWithLink || isForwarded)) {
         logger.info({ chatId }, 'MessageRouter: single photo+link → immediate process');
-        await _handleClipNovaLink(ctx, session, clipnovaLinks[0].shortCode, overrideThumb);
+        const originalCaption = msg.caption || msg.text || null;
+        await _handleClipNovaLink(ctx, session, clipnovaLinks[0].shortCode, overrideThumb, originalCaption);
         return true;
       }
 
@@ -147,12 +148,14 @@ const routeMessage = async (ctx, session, { ingestService, linkService } = {}) =
         logger.info({ chatId, count: clipnovaLinks.length }, 'MessageRouter: multi-link single message → combined response');
         
         // Process all links in parallel
+        const originalCaption = msg.caption || msg.text || null;
         const results = await Promise.allSettled(
           clipnovaLinks.map(detected =>
             duplicateClipNovaVideo({
               userId: session.userId,
               shortCode: detected.shortCode,
-              pendingThumb: overrideThumb
+              pendingThumb: overrideThumb,
+              originalCaption
             })
           )
         );
@@ -305,7 +308,7 @@ const _handlePhotoOnly = async (ctx, session) => {
 };
 
 /* ─── ClipNova link → duplicate pipeline ────────────────────────────────── */
-const _handleClipNovaLink = async (ctx, session, shortCode, pendingThumb) => {
+const _handleClipNovaLink = async (ctx, session, shortCode, pendingThumb, originalCaption = null) => {
   const chatId = ctx.chat.id;
 
   if (!session.userId) return ctx.reply('🔐 Please /login first.');
@@ -317,7 +320,8 @@ const _handleClipNovaLink = async (ctx, session, shortCode, pendingThumb) => {
     const { video, shareUrl, message, wasAlreadyOwned } = await duplicateClipNovaVideo({
       userId: session.userId,
       shortCode,
-      pendingThumb
+      pendingThumb,
+      originalCaption
     });
 
     const thumbUrl = video.thumbnailUrl || process.env.DEFAULT_THUMBNAIL_URL || null;

@@ -23,36 +23,56 @@ const {
 
 const FRONTEND_URL = (process.env.FRONTEND_URL || process.env.APP_URL || 'https://www.zaxgram.com').replace(/\/$/, '');
 /* ─── Format message with header/footer ────────────────────────────────── */
-const formatMessageWithHeaderFooter = async (userId, shareUrl, videoTitle) => {
+/**
+ * @param {string} userId
+ * @param {string} shareUrl       - new share URL to embed
+ * @param {string} videoTitle     - video title (fallback)
+ * @param {string} [originalCaption] - original forwarded message caption (used when user's header/footer is OFF)
+ */
+const formatMessageWithHeaderFooter = async (userId, shareUrl, videoTitle, originalCaption = null) => {
   try {
     const user = await User.findById(userId);
     if (!user) return `✅ Upload Complete\n\n📹 ${videoTitle}\n🔗 ${shareUrl}`;
 
+    const userHasHeader = user.headerEnabled && user.telegramHeader;
+    const userHasFooter = user.footerEnabled && user.telegramFooter;
+    const userHasOwnDecoration = userHasHeader || userHasFooter;
+
     // Clean Output: skip "✅ Upload Complete" and filename — show header + link + footer only
     if (user.cleanOutput) {
       let message = '';
-      if (user.headerEnabled && user.telegramHeader) {
-        message += `${user.telegramHeader}\n\n`;
-      }
+      if (userHasHeader) message += `${user.telegramHeader}\n\n`;
       message += shareUrl;
-      if (user.footerEnabled && user.telegramFooter) {
-        message += `\n\n${user.telegramFooter}`;
-      }
+      if (userHasFooter) message += `\n\n${user.telegramFooter}`;
       return message;
     }
 
+    // If user's own header/footer are OFF and original caption exists →
+    // use original caption as decoration (replace old link with new link)
+    if (!userHasOwnDecoration && originalCaption) {
+      // Strip the old zaxgram/zexgram link from caption and replace with new link
+      const cleanedCaption = originalCaption
+        .replace(/https?:\/\/[^\s]+\/(?:watch|(?:api\/)?l)\/[A-Za-z0-9]{4,32}/gi, '')
+        .trim();
+
+      if (cleanedCaption) {
+        // Caption has text besides the link — use it as decoration
+        return `${cleanedCaption}\n\n${shareUrl}`;
+      }
+      // Caption was only a link — just return new link
+      return shareUrl;
+    }
+
+    // User has own header/footer — use them
     let message = '✅ Upload Complete\n\n';
 
-    // Add header if enabled
-    if (user.headerEnabled && user.telegramHeader) {
+    if (userHasHeader) {
       message += `${user.telegramHeader}\n\n`;
     }
 
-    // Video info and link
     message += `📹 ${videoTitle}\n🔗 ${shareUrl}`;
 
-    // Add footer if enabled
-    if (user.footerEnabled && user.telegramFooter) {
+    if (userHasFooter) {
       message += `\n\n${user.telegramFooter}`;
     }
 
@@ -302,7 +322,7 @@ const uploadTelegramVideo = async ({ userId, fileId, fileUniqueId, title, mimeTy
 };
 
 /* ─── PIPELINE 2: ClipNova link duplication ────────────────────────────── */
-const duplicateClipNovaVideo = async ({ userId, shortCode, pendingThumb }) => {
+const duplicateClipNovaVideo = async ({ userId, shortCode, pendingThumb, originalCaption = null }) => {
   logger.info({ userId, shortCode }, 'Pipeline: ClipNova duplication started');
 
   const originalLink = await Link.findOne({ shortCode }).populate('videoId');
@@ -317,7 +337,7 @@ const duplicateClipNovaVideo = async ({ userId, shortCode, pendingThumb }) => {
   if (existingDup) {
     const existingLink = await Link.findOne({ videoId: existingDup._id, isActive: true }).sort({ createdAt: -1 });
     const shareUrl = existingLink ? `${FRONTEND_URL}/watch/${existingLink.shortCode}` : null;
-    const formattedMessage = await formatMessageWithHeaderFooter(userId, shareUrl, existingDup.title);
+    const formattedMessage = await formatMessageWithHeaderFooter(userId, shareUrl, existingDup.title, originalCaption);
     logger.info({ videoId: existingDup._id }, 'Pipeline: duplicate already exists');
     return { video: existingDup, link: existingLink, shareUrl, message: formattedMessage, wasAlreadyOwned: true };
   }
@@ -385,8 +405,8 @@ const duplicateClipNovaVideo = async ({ userId, shortCode, pendingThumb }) => {
   // Re-fetch to get latest thumbnailUrl
   const finalVideo = await Video.findById(newVideo._id).lean();
 
-  // Format message with header/footer
-  const formattedMessage = await formatMessageWithHeaderFooter(userId, shareUrl, finalVideo.title);
+  // Format message with header/footer (pass original caption for use when user's own header/footer is OFF)
+  const formattedMessage = await formatMessageWithHeaderFooter(userId, shareUrl, finalVideo.title, originalCaption);
 
   logger.info({ newVideoId: newVideo._id, shareUrl }, 'Pipeline: duplication complete');
   return { video: finalVideo, link, shareUrl, message: formattedMessage, wasAlreadyOwned: false };
