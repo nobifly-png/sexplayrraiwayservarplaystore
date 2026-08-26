@@ -1,7 +1,7 @@
 const https = require('https');
 const http = require('http');
 const { Upload } = require('@aws-sdk/lib-storage');
-const { PutObjectCommand, GetObjectCommand, CopyObjectCommand } = require('@aws-sdk/client-s3');
+const { PutObjectCommand, GetObjectCommand, CopyObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const { r2Client, bucketName, publicBaseUrl, isR2Configured } = require('../../config/r2');
 const crypto = require('crypto');
 const logger = require('../../config/logger');
@@ -184,6 +184,22 @@ const buildThumbnailStorageKey = (creatorId, videoId) =>
   `thumbnails/${creatorId}/${videoId}.jpg`;
 
 /**
+ * Delete an object from R2.
+ * Called only when no other Video document references the same storageKey.
+ */
+const deleteR2Object = async (storageKey) => {
+  if (!isR2Configured() || !r2Client) throw new Error('R2 not configured');
+  if (!storageKey) return;
+
+  await r2Client.send(new DeleteObjectCommand({
+    Bucket: bucketName,
+    Key: storageKey
+  }));
+
+  logger.info({ storageKey }, 'R2: object deleted');
+};
+
+/**
  * Get public URL for a storage key.
  */
 const getPublicUrl = (storageKey) =>
@@ -193,6 +209,7 @@ module.exports = {
   streamUrlToR2,
   uploadBufferToR2,
   copyR2Object,
+  deleteR2Object,
   buildVideoStorageKey,
   buildThumbnailStorageKey,
   getPublicUrl

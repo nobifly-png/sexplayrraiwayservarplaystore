@@ -1,4 +1,5 @@
 const Video = require('./video.model');
+const { deleteR2Object } = require('../telegram/r2.utils');
 const { NotFoundError } = require('../../common/errors');
 const { VIDEO_TYPE, VIDEO_STATUS, AUDIT_ACTION, AUDIT_ENTITY_TYPE } = require('../../common/enums');
 const auditService = require('../audit/audit.service');
@@ -113,6 +114,29 @@ class VideoService {
     video.status = VIDEO_STATUS.DELETED;
     await video.save();
 
+    // Safe R2 deletion: only delete the file if no other active video references same storageKey
+    if (video.storageKey) {
+      const otherRefs = await Video.countDocuments({
+        storageKey: video.storageKey,
+        isDeleted: false,
+        _id: { $ne: video._id }
+      });
+      if (otherRefs === 0) {
+        deleteR2Object(video.storageKey).catch(() => {});
+      }
+    }
+    // Same check for thumbnail (only delete if no other video uses it)
+    if (video.thumbnailKey) {
+      const otherThumbRefs = await Video.countDocuments({
+        thumbnailKey: video.thumbnailKey,
+        isDeleted: false,
+        _id: { $ne: video._id }
+      });
+      if (otherThumbRefs === 0) {
+        deleteR2Object(video.thumbnailKey).catch(() => {});
+      }
+    }
+
     auditService.logAction({
       userId: creatorId,
       action: AUDIT_ACTION.VIDEO_DELETED,
@@ -132,6 +156,28 @@ class VideoService {
     video.deletedAt = new Date();
     video.status = VIDEO_STATUS.DELETED;
     await video.save();
+
+    // Safe R2 deletion: only delete the file if no other active video references same storageKey
+    if (video.storageKey) {
+      const otherRefs = await Video.countDocuments({
+        storageKey: video.storageKey,
+        isDeleted: false,
+        _id: { $ne: video._id }
+      });
+      if (otherRefs === 0) {
+        deleteR2Object(video.storageKey).catch(() => {});
+      }
+    }
+    if (video.thumbnailKey) {
+      const otherThumbRefs = await Video.countDocuments({
+        thumbnailKey: video.thumbnailKey,
+        isDeleted: false,
+        _id: { $ne: video._id }
+      });
+      if (otherThumbRefs === 0) {
+        deleteR2Object(video.thumbnailKey).catch(() => {});
+      }
+    }
 
     auditService.logAction({
       userId: adminId,

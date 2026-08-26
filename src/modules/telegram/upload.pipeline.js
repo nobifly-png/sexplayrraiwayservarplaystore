@@ -8,7 +8,7 @@ const linkService = require('../links/link.service');
 const { VIDEO_TYPE, VIDEO_STATUS } = require('../../common/enums');
 const { isR2Configured } = require('../../config/r2');
 const {
-  streamUrlToR2, copyR2Object,
+  streamUrlToR2,
   buildVideoStorageKey, buildThumbnailStorageKey,
   getPublicUrl, uploadBufferToR2
 } = require('./r2.utils');
@@ -342,21 +342,12 @@ const duplicateClipNovaVideo = async ({ userId, shortCode, pendingThumb, origina
     return { video: existingDup, link: existingLink, shareUrl, message: formattedMessage, wasAlreadyOwned: true };
   }
 
-  // R2 server-side copy
-  let newStorageKey = orig.storageKey;
-  let newVideoUrl = null;
-  if (orig.storageKey && isR2Configured()) {
-    try {
-      const ext = orig.storageKey.split('.').pop() || 'mp4';
-      newStorageKey = buildVideoStorageKey(userId, ext);
-      await copyR2Object(orig.storageKey, newStorageKey);
-      newVideoUrl = getPublicUrl(newStorageKey);
-      logger.info({ newStorageKey }, 'Pipeline: R2 video copy complete');
-    } catch (err) {
-      logger.warn({ err }, 'Pipeline: R2 copy failed — referencing original key');
-      newStorageKey = orig.storageKey;
-    }
-  }
+  // Shared storage: reuse original storageKey — no R2 copy needed.
+  // Each user gets their own Video DB record + link, but all point to the same R2 file.
+  // This saves storage when many users duplicate the same video.
+  // Safe deletion is handled in video.service.js (ref-count check before R2 delete).
+  const newStorageKey = orig.storageKey;
+  const newVideoUrl = newStorageKey ? getPublicUrl(newStorageKey) : null;
 
   const newVideo = await Video.create({
     creatorId: userId,
@@ -378,24 +369,16 @@ const duplicateClipNovaVideo = async ({ userId, shortCode, pendingThumb, origina
 
   // Thumbnail handling
   if (pendingThumb?.buffer) {
+    // User provided a manual thumbnail — attach it (new R2 upload for this user's video)
     await attachThumbnail(newVideo, pendingThumb, null);
-  } else if (orig.thumbnailKey && isR2Configured()) {
-    try {
-      const newThumbKey = buildThumbnailStorageKey(userId, newVideo._id.toString());
-      await copyR2Object(orig.thumbnailKey, newThumbKey);
-      newVideo.thumbnailUrl = getPublicUrl(newThumbKey);
-      newVideo.thumbnailKey = newThumbKey;
-      newVideo.thumbnailSource = 'AUTO';
-      await newVideo.save();
-      logger.info({ newThumbKey }, 'Pipeline: thumbnail R2 copy complete');
-    } catch {
-      newVideo.thumbnailUrl = orig.thumbnailUrl || process.env.DEFAULT_THUMBNAIL_URL || null;
-      await newVideo.save();
-    }
   } else if (orig.thumbnailUrl) {
+    // Reuse original thumbnail URL directly — no R2 copy needed
     newVideo.thumbnailUrl = orig.thumbnailUrl;
+    newVideo.thumbnailKey = orig.thumbnailKey || null; // share the key reference too
+    newVideo.thumbnailSource = 'AUTO';
     await newVideo.save();
   } else {
+    // No thumbnail at all — try auto-generate from video URL
     attachThumbnail(newVideo, null, newVideoUrl).catch(() => {});
   }
 
