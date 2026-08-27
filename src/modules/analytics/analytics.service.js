@@ -147,12 +147,19 @@ class AnalyticsService {
   }
 
   /**
-   * Admin dashboard — always live (admins need real-time platform data).
+   * Admin dashboard.
+   * - Platform totals (totalViews, validViews, rejectedViews, totalEarnings)
+   *   remain live from ViewLedger so admin always sees real-time platform health.
+   * - Top Creators section reads from ViewSnapshot so the numbers shown here
+   *   match exactly what each creator sees on their own dashboard — critical for
+   *   correct payment amounts.
    */
   async getAdminDashboard({ startDate, endDate } = {}) {
     const dateMatch = buildDateMatch(startDate, endDate);
+    const ViewSnapshot = require('./viewSnapshot.model');
 
-    const [totalRealViews, validRealViews, rejectedRealViews, earningsResult, topCreatorsRaw] = await Promise.all([
+    const [totalRealViews, validRealViews, rejectedRealViews, earningsResult, topSnapshotsRaw] = await Promise.all([
+      // Platform-wide totals — live
       ViewLedger.countDocuments(dateMatch),
       ViewLedger.countDocuments({ ...dateMatch, viewType: VIEW_TYPE.VALID }),
       ViewLedger.countDocuments({ ...dateMatch, viewType: VIEW_TYPE.REJECTED }),
@@ -160,17 +167,25 @@ class AnalyticsService {
         { $match: { ...dateMatch, viewType: VIEW_TYPE.VALID } },
         { $group: { _id: null, totalEarnings: { $sum: '$earningsAmount' } } }
       ]),
-      ViewLedger.aggregate([
-        { $match: { ...dateMatch, viewType: VIEW_TYPE.VALID } },
-        { $group: { _id: '$creatorId', validViews: { $sum: 1 }, earnings: { $sum: '$earningsAmount' } } },
-        { $sort: { earnings: -1 } },
+      // Top creators — from snapshot (same numbers as creator dashboard)
+      ViewSnapshot.aggregate([
+        { $sort: { totalEarnings: -1 } },
         { $limit: 10 },
-        { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'creator' } },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'creatorId',
+            foreignField: '_id',
+            as: 'creator'
+          }
+        },
         { $unwind: { path: '$creator', preserveNullAndEmptyArrays: true } },
         {
           $project: {
-            validViews: 1,
-            earnings: 1,
+            _id: '$creatorId',
+            validViews: '$validViews',       // already counted (4:1 applied)
+            earnings: '$totalEarnings',       // already display earnings
+            snapshotAt: '$snapshotAt',
             creator: { name: '$creator.name', email: '$creator.email' }
           }
         }
@@ -179,18 +194,14 @@ class AnalyticsService {
 
     const totalEarnings = earningsResult[0]?.totalEarnings || 0;
 
-    const topCreators = topCreatorsRaw.map(creator => ({
-      ...creator,
-      validViews: calculateCountedViews(creator.validViews),
-      earnings: calculateDisplayEarnings(creator.validViews, creator.earnings)
-    }));
-
     return {
+      // Platform totals — live from ViewLedger
       totalViews: calculateCountedViews(totalRealViews),
       validViews: calculateCountedViews(validRealViews),
       rejectedViews: calculateCountedViews(rejectedRealViews),
       totalEarnings: calculateDisplayEarnings(validRealViews, totalEarnings),
-      topCreators
+      // Top creators — snapshot values (match creator's own dashboard exactly)
+      topCreators: topSnapshotsRaw
     };
   }
 }
