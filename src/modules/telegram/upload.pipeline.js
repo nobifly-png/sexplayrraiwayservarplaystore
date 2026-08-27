@@ -330,6 +330,9 @@ const duplicateClipNovaVideo = async ({ userId, shortCode, pendingThumb, origina
   if (!orig || orig.isDeleted || orig.status !== VIDEO_STATUS.READY)
     throw new Error('Original video is not available');
 
+  // Fetch user settings (needed for cleanOutput title logic)
+  const user = await User.findById(userId).lean();
+
   // Already duplicated by this user?
   const existingDup = await Video.findOne({ creatorId: userId, duplicatedFrom: orig._id, isDeleted: false });
   if (existingDup) {
@@ -349,7 +352,7 @@ const duplicateClipNovaVideo = async ({ userId, shortCode, pendingThumb, origina
 
   const newVideo = await Video.create({
     creatorId: userId,
-    title: orig.title,
+    title: user.cleanOutput ? '' : orig.title,
     description: orig.description || 'Duplicated via Telegram Bot',
     type: VIDEO_TYPE.DIRECT_UPLOAD,
     storageKey: newStorageKey,
