@@ -37,9 +37,9 @@ async function sendResetEmail(toEmail, resetToken) {
 
     // Email content
     const mailOptions = {
-      from: `Zexgram <${process.env.GMAIL_USER || 'zexgram@gmail.com'}>`,
+      from: `Zaxgram <${process.env.GMAIL_USER || 'zexgram@gmail.com'}>`,
       to: toEmail,
-      subject: 'Reset Your Password - Zexgram',
+      subject: 'Reset Your Password - Zaxgram',
       html: `
 <!DOCTYPE html>
 <html>
@@ -54,7 +54,7 @@ async function sendResetEmail(toEmail, resetToken) {
       <!-- Header -->
       <div style="text-align: center; margin-bottom: 30px;">
         <div style="font-size: 32px; font-weight: bold; background: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 10px;">
-          🎬 Zexgram
+          🎬 Zaxgram
         </div>
         <p style="color: #6b7280; margin: 0; font-size: 14px;">Video Monetization Platform</p>
       </div>
@@ -62,7 +62,7 @@ async function sendResetEmail(toEmail, resetToken) {
       <!-- Content -->
       <h1 style="color: #1f2937; font-size: 24px; margin-bottom: 20px; font-weight: 600;">Reset Your Password</h1>
       <p style="margin-bottom: 15px; color: #4b5563; font-size: 16px; line-height: 1.6;">Hello,</p>
-      <p style="margin-bottom: 15px; color: #4b5563; font-size: 16px; line-height: 1.6;">We received a request to reset the password for your Zexgram account. Click the button below to create a new password:</p>
+      <p style="margin-bottom: 15px; color: #4b5563; font-size: 16px; line-height: 1.6;">We received a request to reset the password for your Zaxgram account. Click the button below to create a new password:</p>
       
       <!-- Button -->
       <div style="text-align: center; margin: 30px 0;">
@@ -94,8 +94,8 @@ async function sendResetEmail(toEmail, resetToken) {
     
     <!-- Footer -->
     <div style="text-align: center; color: #9ca3af; font-size: 13px; margin-top: 30px; padding-top: 30px;">
-      <p style="margin: 5px 0;"><strong>Zexgram</strong> - Earn Money from Your Videos</p>
-      <p style="margin: 5px 0;">© ${new Date().getFullYear()} Zexgram. All rights reserved.</p>
+      <p style="margin: 5px 0;"><strong>Zaxgram</strong> - Earn Money from Your Videos</p>
+      <p style="margin: 5px 0;">© ${new Date().getFullYear()} Zaxgram. All rights reserved.</p>
       <p style="font-size: 12px; color: #9ca3af; margin: 5px 0;">This is an automated email. Please do not reply.</p>
     </div>
   </div>
@@ -103,11 +103,11 @@ async function sendResetEmail(toEmail, resetToken) {
 </html>
       `,
       text: `
-Reset Your Password - Zexgram
+Reset Your Password - Zaxgram
 
 Hello,
 
-We received a request to reset the password for your Zexgram account.
+We received a request to reset the password for your Zaxgram account.
 
 Click the link below to reset your password:
 ${resetLink}
@@ -116,7 +116,7 @@ This link will expire in 1 hour and can only be used once.
 
 If you didn't request this password reset, you can safely ignore this email.
 
-© ${new Date().getFullYear()} Zexgram. All rights reserved.
+© ${new Date().getFullYear()} Zaxgram. All rights reserved.
 This is an automated email. Please do not reply.
       `
     };
