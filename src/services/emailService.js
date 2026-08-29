@@ -1,28 +1,46 @@
+const { google } = require('googleapis');
+const MailComposer = require('nodemailer/lib/mail-composer');
 const logger = require('../config/logger');
 
 /**
- * Email Service for Zexgram
- * Supports both Resend (recommended) and Gmail API
+ * Gmail OAuth2 Configuration
+ * Uses Google API Console credentials for sending emails
  */
+const oauth2Client = new google.auth.OAuth2(
+  process.env.GMAIL_CLIENT_ID,
+  process.env.GMAIL_CLIENT_SECRET,
+  'https://developers.google.com/oauthplayground'
+);
 
-const EMAIL_PROVIDER = process.env.EMAIL_PROVIDER || 'resend'; // 'resend' or 'gmail'
+oauth2Client.setCredentials({
+  refresh_token: process.env.GMAIL_REFRESH_TOKEN
+});
+
+const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
 /**
- * Send password reset email using Resend API
+ * Send password reset email using Gmail API with OAuth2
  * @param {string} toEmail - Recipient email address
  * @param {string} resetToken - Password reset token
  * @returns {Promise<{success: boolean, messageId: string}>}
  */
-async function sendResetEmailViaResend(toEmail, resetToken) {
-  const RESEND_API_KEY = process.env.RESEND_API_KEY;
-  
-  if (!RESEND_API_KEY) {
-    throw new Error('RESEND_API_KEY not configured');
-  }
+async function sendResetEmail(toEmail, resetToken) {
+  try {
+    // Get fresh access token
+    const accessTokenResponse = await oauth2Client.getAccessToken();
+    
+    if (!accessTokenResponse.token) {
+      throw new Error('Failed to get Gmail access token. Check GMAIL_REFRESH_TOKEN.');
+    }
 
-  const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
+    const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
 
-  const emailHtml = `
+    // Email content
+    const mailOptions = {
+      from: `Zexgram <${process.env.GMAIL_USER || 'zexgram@gmail.com'}>`,
+      to: toEmail,
+      subject: 'Reset Your Password - Zexgram',
+      html: `
 <!DOCTYPE html>
 <html>
 <head>
@@ -83,9 +101,8 @@ async function sendResetEmailViaResend(toEmail, resetToken) {
   </div>
 </body>
 </html>
-  `;
-
-  const emailText = `
+      `,
+      text: `
 Reset Your Password - Zexgram
 
 Hello,
@@ -101,129 +118,42 @@ If you didn't request this password reset, you can safely ignore this email.
 
 © ${new Date().getFullYear()} Zexgram. All rights reserved.
 This is an automated email. Please do not reply.
-  `;
-
-  try {
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${RESEND_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        from: 'Zexgram <onboarding@resend.dev>',
-        to: [toEmail],
-        subject: 'Reset Your Password - Zexgram',
-        html: emailHtml,
-        text: emailText
-      })
-    });
-
-    const data = await response.json();
-    
-    if (!response.ok) {
-      throw new Error(data.message || `Resend API error: ${response.status}`);
-    }
-
-    logger.info({ email: toEmail, messageId: data.id }, '✅ Password reset email sent via Resend');
-    return { success: true, messageId: data.id };
-    
-  } catch (error) {
-    logger.error({ error: error.message, email: toEmail }, '❌ Resend email sending failed');
-    throw new Error('Failed to send reset email via Resend: ' + error.message);
-  }
-}
-
-/**
- * Send password reset email using Gmail API (fallback)
- * @param {string} toEmail - Recipient email address
- * @param {string} resetToken - Password reset token
- * @returns {Promise<{success: boolean, messageId: string}>}
- */
-async function sendResetEmailViaGmail(toEmail, resetToken) {
-  const { google } = require('googleapis');
-  const MailComposer = require('nodemailer/lib/mail-composer');
-
-  const oauth2Client = new google.auth.OAuth2(
-    process.env.GMAIL_CLIENT_ID,
-    process.env.GMAIL_CLIENT_SECRET,
-    'https://developers.google.com/oauthplayground'
-  );
-
-  oauth2Client.setCredentials({
-    refresh_token: process.env.GMAIL_REFRESH_TOKEN
-  });
-
-  const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
-
-  try {
-    const accessTokenResponse = await oauth2Client.getAccessToken();
-    const accessToken = accessTokenResponse.token;
-
-    const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
-
-    const mailOptions = {
-      from: `Zexgram <${process.env.GMAIL_USER}>`,
-      to: toEmail,
-      subject: 'Reset Your Password - Zexgram',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <h2 style="color: #3b82f6;">Password Reset Request</h2>
-          <p>Hello,</p>
-          <p>We received a request to reset your password for your Zexgram account.</p>
-          <p>Click the button below to reset your password:</p>
-          <a href="${resetLink}" 
-             style="display: inline-block; background: #3b82f6; color: white; 
-                    padding: 12px 24px; text-decoration: none; border-radius: 8px;
-                    margin: 16px 0; font-weight: bold;">
-            Reset Password
-          </a>
-          <p>Or copy and paste this link in your browser:</p>
-          <p style="word-break: break-all; color: #666; background: #f3f4f6; padding: 10px; border-radius: 4px;">${resetLink}</p>
-          <p>This link expires in <strong>1 hour</strong>.</p>
-          <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
-          <p style="color: #999; font-size: 12px;">
-            If you didn't request this password reset, you can safely ignore this email.
-          </p>
-        </div>
-      `,
-      text: `Reset your password: ${resetLink}\n\nThis link expires in 1 hour.\n\nIf you didn't request this, you can safely ignore this email.`
+      `
     };
 
+    // Compile email
     const mail = new MailComposer(mailOptions);
     const message = await mail.compile().build();
     
+    // Encode for Gmail API
     const rawMessage = Buffer.from(message)
       .toString('base64')
       .replace(/\+/g, '-')
       .replace(/\//g, '_')
       .replace(/=+$/, '');
 
+    // Send via Gmail API
     const result = await gmail.users.messages.send({
       userId: 'me',
       requestBody: { raw: rawMessage }
     });
 
-    logger.info({ email: toEmail, messageId: result.data.id }, '✅ Password reset email sent via Gmail API');
+    logger.info({ 
+      email: toEmail, 
+      messageId: result.data.id,
+      threadId: result.data.threadId 
+    }, '✅ Password reset email sent successfully via Gmail API');
+    
     return { success: true, messageId: result.data.id };
     
   } catch (error) {
-    logger.error({ error: error.message, email: toEmail }, '❌ Gmail API email sending failed');
-    throw new Error('Failed to send reset email via Gmail: ' + error.message);
-  }
-}
-
-/**
- * Main function to send password reset email
- * Automatically chooses provider based on EMAIL_PROVIDER env variable
- */
-async function sendResetEmail(toEmail, resetToken) {
-  if (EMAIL_PROVIDER === 'resend') {
-    return await sendResetEmailViaResend(toEmail, resetToken);
-  } else if (EMAIL_PROVIDER === 'gmail') {
-    return await sendResetEmailViaGmail(toEmail, resetToken);
-  } else {
-    throw new Error(`Unknown email provider: ${EMAIL_PROVIDER}`);
+    logger.error({ 
+      error: error.message, 
+      email: toEmail,
+      stack: error.stack 
+    }, '❌ Failed to send password reset email via Gmail API');
+    
+    throw new Error('Failed to send reset email: ' + error.message);
   }
 }
 
