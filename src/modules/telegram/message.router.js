@@ -8,6 +8,7 @@ const Video = require('../videos/video.model');
 const Link = require('../links/link.model');
 const logger = require('../../config/logger');
 const telegramConfig = require('../../config/telegram');
+const teraboxService = require('../terabox/terabox.service');
 
 const FRONTEND_URL = (process.env.FRONTEND_URL || process.env.APP_URL || 'https://www.zaxgram.com').replace(/\/$/, '');
 const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
@@ -421,13 +422,55 @@ const _handleVideoFile = (ctx, session, fileInfo) => {
   });
 };
 
-/* ─── External link → ingest pipeline ───────────────────────────────────── */
+/* ─── External link → ingest or TeraBox pipeline ────────────────────────── */
 const _handleExternalLink = async (ctx, session, detected, ingestService, linkService) => {
   const chatId = ctx.chat.id;
 
   if (!session.userId) return ctx.reply('🔐 Please /login first.');
   if (isRateLimited(chatId)) return ctx.reply('⚠️ Too many requests. Please wait a minute.');
 
+  // ── TeraBox: full download → R2 upload ───────────────────────────────────
+  if (detected.source === SUPPORTED_SOURCES.TERABOX) {
+    const ackMsg = await ctx.reply('⏳ Downloading from TeraBox...');
+    try {
+      const { VIDEO_TYPE, VIDEO_STATUS } = require('../../common/enums');
+      const { storageKey, publicUrl, filename, fileSize, mimeType } = await teraboxService.convertToR2(detected.url, session.userId);
+
+      const video = await Video.create({
+        creatorId: session.userId,
+        title: filename.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ').slice(0, 200) || 'TeraBox Video',
+        description: 'Imported from TeraBox',
+        type: VIDEO_TYPE.DIRECT_UPLOAD,
+        storageKey,
+        fileName: filename,
+        mimeType,
+        fileSize,
+        status: VIDEO_STATUS.READY,
+        uploadSource: 'TELEGRAM_LINK',
+        createdViaBot: true
+      });
+
+      const link = await linkService.createLink(session.userId, video._id.toString());
+      const shareUrl = `${FRONTEND_URL}/watch/${link.shortCode}`;
+
+      const reply = `✅ TeraBox video uploaded!\n\n📹 ${video.title}\n🔗 ${shareUrl}`;
+      await ctx.telegram.editMessageText(chatId, ackMsg.message_id, undefined, reply, { disable_web_page_preview: true })
+        .catch(() => ctx.reply(reply, { disable_web_page_preview: true }).catch(() => {}));
+
+    } catch (err) {
+      logger.error({ err: err.message }, 'MessageRouter: TeraBox conversion failed');
+      const errMsg = err.message.includes('quota') ? '❌ TeraBox daily quota exceeded. Try again tomorrow.' :
+                     err.message.includes('rate limit') ? '❌ Too many requests. Please wait.' :
+                     err.message.includes('no files') ? '❌ No downloadable files found in this TeraBox link.' :
+                     err.message.includes('API key') ? '❌ TeraBox API not configured.' :
+                     '❌ TeraBox download failed. Please try again.';
+      await ctx.telegram.editMessageText(chatId, ackMsg.message_id, undefined, errMsg, {})
+        .catch(() => ctx.reply(errMsg).catch(() => {}));
+    }
+    return;
+  }
+
+  // ── Other external links (Dailymotion, Streamtape, etc.) → EXTERNAL_REF ─
   const { INGEST_STATUS } = require('./ingestJob.model');
   const SOURCE_LABELS = {
     TERABOX: 'TeraBox', DAILYMOTION: 'Dailymotion',

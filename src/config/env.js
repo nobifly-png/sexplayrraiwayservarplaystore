@@ -92,7 +92,13 @@ const config = {
     password: process.env.SUPER_ADMIN_PASSWORD
   },
   /** Express trust proxy setting (from TRUST_PROXY). Default false for local dev. */
-  trustProxy: parseTrustProxy(process.env.TRUST_PROXY)
+  trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
+  terabox: {
+    apiBaseUrl: process.env.TERABOX_API_BASE_URL || 'https://api.teraboxdl.site',
+    apiKey: process.env.TERABOX_API_KEY || null,
+    dailyQuota: parseNumber(process.env.TERABOX_DAILY_QUOTA, 20000),
+    rateLimitPerMin: parseNumber(process.env.TERABOX_RATE_LIMIT_PER_MIN, 100)
+  }
 };
 
 const isPlaceholder = (value) => {
