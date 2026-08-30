@@ -64,7 +64,8 @@ const buildSignature = (timestamp, bodyStr) => {
 
 /* ─── HTTP helper ────────────────────────────────────────────────────────── */
 const httpPost = (url, body) => new Promise((resolve, reject) => {
-  const bodyStr = JSON.stringify(body);
+  // IMPORTANT: Use compact JSON (no spaces) — required for HMAC signature match
+  const bodyStr = JSON.stringify(body, null, 0);
   const parsed = new URL(url);
   const proto = parsed.protocol === 'https:' ? https : http;
 
@@ -79,6 +80,8 @@ const httpPost = (url, body) => new Promise((resolve, reject) => {
   };
   if (signature) headers['X-Signature'] = signature;
 
+  logger.info({ endpoint: url, timestamp, hasSignature: !!signature }, 'TeraBox: API request');
+
   const req = proto.request({
     hostname: parsed.hostname,
     port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
@@ -90,8 +93,9 @@ const httpPost = (url, body) => new Promise((resolve, reject) => {
     let data = '';
     res.on('data', c => { data += c; });
     res.on('end', () => {
+      logger.info({ status: res.statusCode, dataLength: data.length, preview: data.substring(0, 100) }, 'TeraBox: API raw response');
       try { resolve({ status: res.statusCode, body: JSON.parse(data) }); }
-      catch { reject(new Error('TeraBox API returned non-JSON response')); }
+      catch { reject(new Error(`TeraBox API returned non-JSON response (HTTP ${res.statusCode}): ${data.substring(0, 200)}`)); }
     });
     res.on('error', reject);
   });
