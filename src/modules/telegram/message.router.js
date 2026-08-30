@@ -233,11 +233,20 @@ const routeMessage = async (ctx, session, { ingestService, linkService } = {}) =
       return true;
     }
 
-    // External link (TeraBox, Dailymotion, etc.) — only if no photo/video in same message
+    // External link (TeraBox, Dailymotion, etc.)
+    // TeraBox: process even if photo is present (photo = thumbnail from channel post, not our thumbnail)
+    // Other sources: only if no photo/video/document in same message
     const detected = allDetected.length > 0 ? allDetected[0] : null;
-    if (detected && !msg.photo && !msg.video && !msg.document) {
-      await _handleExternalLink(ctx, session, detected, ingestService, linkService);
-      return true;
+    if (detected) {
+      if (detected.source === SUPPORTED_SOURCES.TERABOX) {
+        // TeraBox with photo — process link, ignore the photo (it's the channel's thumbnail)
+        await _handleExternalLink(ctx, session, detected, ingestService, linkService);
+        return true;
+      }
+      if (!msg.photo && !msg.video && !msg.document) {
+        await _handleExternalLink(ctx, session, detected, ingestService, linkService);
+        return true;
+      }
     }
   }
 
