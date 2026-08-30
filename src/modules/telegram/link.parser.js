@@ -40,7 +40,7 @@ const SOURCE_PATTERNS = [
   },
   {
     source: SUPPORTED_SOURCES.TERABOX,
-    pattern: /https?:\/\/(?:www\.)?(?:1024terabox|terabox|4funbox|freeterabox|mirrobox|nephobox|teraboxapp|momerybox|tibibox|teraboxlink|terafileshare|terasharelink|1024tera)\.com\/[^\s"'<>]{4,}/i
+    pattern: /https?:\/\/(?:www\.)?(?:1024terabox|terabox|4funbox|freeterabox|mirrobox|nephobox|teraboxapp|momerybox|tibibox|teraboxlink|terafileshare|terasharelink|terasharefile|1024tera)\.(?:com|site|app|io|net)\/[^\s"'<>]{4,}/i
   },
   {
     source: SUPPORTED_SOURCES.DAILYMOTION,
