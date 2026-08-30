@@ -96,6 +96,7 @@ const config = {
   terabox: {
     apiBaseUrl: process.env.TERABOX_API_BASE_URL || 'https://api.teraboxdl.site',
     apiKey: process.env.TERABOX_API_KEY || null,
+    apiSecret: process.env.TERABOX_API_SECRET || null,
     dailyQuota: parseNumber(process.env.TERABOX_DAILY_QUOTA, 20000),
     rateLimitPerMin: parseNumber(process.env.TERABOX_RATE_LIMIT_PER_MIN, 100)
   }

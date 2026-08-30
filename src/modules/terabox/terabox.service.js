@@ -3,14 +3,15 @@
  * Resolves TeraBox share links via AR Digital Services API,
  * streams the file to Cloudflare R2, and returns a Zaxgram link.
  *
- * API docs: https://api.teraboxdl.site
- * Auth: Simple API key (no separate secret required)
+ * Auth: HMAC-SHA256 signed — requires API_KEY + API_SECRET
+ * Signature: HMAC-SHA256("POST/v1/api" + timestamp + body, API_SECRET)
  */
 
 const https = require('https');
 const http = require('http');
+const crypto = require('crypto');
 const { terabox: teraboxConfig } = require('../../config/env');
-const { streamUrlToR2, buildVideoStorageKey } = require('../telegram/r2.utils');
+const { streamUrlToR2, buildVideoStorageKey, uploadBufferToR2 } = require('../telegram/r2.utils');
 const logger = require('../../config/logger');
 
 /* ─── Rate limiter (token bucket) ───────────────────────────────────────── */
@@ -53,22 +54,37 @@ const quotaTracker = {
   }
 };
 
+/* ─── HMAC signature builder ─────────────────────────────────────────────── */
+const buildSignature = (timestamp, bodyStr) => {
+  const apiSecret = process.env.TERABOX_API_SECRET;
+  if (!apiSecret) return null;
+  const message = `POST/v1/api${timestamp}${bodyStr}`;
+  return crypto.createHmac('sha256', apiSecret).update(message).digest('hex');
+};
+
 /* ─── HTTP helper ────────────────────────────────────────────────────────── */
-const httpPost = (url, headers, body) => new Promise((resolve, reject) => {
-  const payload = JSON.stringify(body);
+const httpPost = (url, body) => new Promise((resolve, reject) => {
+  const bodyStr = JSON.stringify(body);
   const parsed = new URL(url);
   const proto = parsed.protocol === 'https:' ? https : http;
+
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const signature = buildSignature(timestamp, bodyStr);
+
+  const headers = {
+    'Content-Type': 'application/json',
+    'Content-Length': Buffer.byteLength(bodyStr),
+    'X-API-Key': teraboxConfig.apiKey,
+    'X-Timestamp': timestamp
+  };
+  if (signature) headers['X-Signature'] = signature;
 
   const req = proto.request({
     hostname: parsed.hostname,
     port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
     path: parsed.pathname + parsed.search,
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Content-Length': Buffer.byteLength(payload),
-      ...headers
-    },
+    headers,
     timeout: 30000
   }, (res) => {
     let data = '';
@@ -82,7 +98,7 @@ const httpPost = (url, headers, body) => new Promise((resolve, reject) => {
 
   req.on('error', reject);
   req.on('timeout', () => { req.destroy(); reject(new Error('TeraBox API request timed out')); });
-  req.write(payload);
+  req.write(bodyStr);
   req.end();
 });
 
@@ -94,59 +110,49 @@ class TeraboxService {
    * @returns {{ downloadUrl, filename, fileSize, mimeType }}
    */
   async resolveLink(shareUrl) {
-    if (!teraboxConfig.apiKey) {
-      throw new Error('TERABOX_API_KEY is not configured');
-    }
-
-    if (!quotaTracker.check()) {
-      throw new Error('TeraBox daily quota exceeded. Try again tomorrow.');
-    }
-
-    if (!rateLimiter.consume()) {
-      throw new Error('TeraBox rate limit reached. Please wait a moment.');
-    }
+    if (!teraboxConfig.apiKey) throw new Error('TERABOX_API_KEY is not configured');
+    if (!quotaTracker.check()) throw new Error('TeraBox daily quota exceeded. Try again tomorrow.');
+    if (!rateLimiter.consume()) throw new Error('TeraBox rate limit reached. Please wait a moment.');
 
     const endpoint = `${teraboxConfig.apiBaseUrl}/v1/api`;
     const body = { url: shareUrl, dir_path: '', page: 1 };
-    const headers = { 'X-API-Key': teraboxConfig.apiKey };
 
     logger.info({ shareUrl }, 'TeraBox: resolving link');
 
-    const { status, body: result } = await httpPost(endpoint, headers, body);
+    const { status, body: result } = await httpPost(endpoint, body);
 
-    if (status !== 200) {
-      throw new Error(`TeraBox API HTTP error: ${status}`);
-    }
-
+    if (status !== 200) throw new Error(`TeraBox API HTTP error: ${status}`);
     if (result.errno !== 0) {
       throw new Error(`TeraBox API error ${result.errno}: ${result.errmsg || result.message || 'Unknown error'}`);
     }
 
     quotaTracker.increment();
 
-    // Extract file info from response
-    // API returns list array with file objects
-    const files = result.list || result.files || result.data || [];
-    if (!files.length) {
-      throw new Error('TeraBox API returned no files for this link');
-    }
+    const files = result.list || [];
+    if (!files.length) throw new Error('TeraBox API returned no files for this link');
 
-    const file = files[0];
-    const downloadUrl = file.dlink || file.download_url || file.url;
-    if (!downloadUrl) {
-      throw new Error('TeraBox API did not return a download URL');
-    }
+    // Find first non-folder video file
+    const file = files.find(f => !f.isdir) || files[0];
 
-    const filename = file.server_filename || file.filename || file.name || 'video.mp4';
-    const fileSize = parseInt(file.size || file.file_size || 0, 10);
-    const mimeType = file.isdir ? null : (
-      filename.match(/\.(mp4|mkv|mov|avi|webm)$/i) ? 'video/mp4' : 'application/octet-stream'
-    );
+    // Correct field from actual API response: direct_link (not dlink)
+    const downloadUrl = file.direct_link || file.dlink || file.download_url;
+    if (!downloadUrl) throw new Error('TeraBox API did not return a download URL');
 
-    logger.info({ filename, fileSize, downloadUrl: downloadUrl.substring(0, 60) + '...' },
-      'TeraBox: link resolved');
+    const filename = file.server_filename || file.filename || 'video.mp4';
+    const fileSize = parseInt(file.size || 0, 10);
+    const duration = parseInt(file.duration || 0, 10);
 
-    return { downloadUrl, filename, fileSize, mimeType };
+    // Thumbnail — url3 is largest (850x580), url1 is smallest (140x90)
+    const thumbUrl = file.thumbs?.url3 || file.thumbs?.url2 || file.thumbs?.url1 || null;
+
+    const ext = filename.split('.').pop().toLowerCase();
+    const mimeType = ['mp4','mkv','mov','avi','webm','m4v'].includes(ext)
+      ? 'video/mp4' : 'application/octet-stream';
+
+    logger.info({ filename, fileSize, duration, hasThumb: !!thumbUrl },
+      'TeraBox: link resolved successfully');
+
+    return { downloadUrl, filename, fileSize, duration, mimeType, thumbUrl };
   }
 
   /**
@@ -156,7 +162,7 @@ class TeraboxService {
    * @returns {{ storageKey, publicUrl, filename, fileSize, mimeType }}
    */
   async convertToR2(shareUrl, userId) {
-    const { downloadUrl, filename, fileSize, mimeType } = await this.resolveLink(shareUrl);
+    const { downloadUrl, filename, fileSize, duration, mimeType, thumbUrl } = await this.resolveLink(shareUrl);
 
     const ext = filename.split('.').pop().toLowerCase() || 'mp4';
     const storageKey = buildVideoStorageKey(userId, ext);
@@ -172,7 +178,9 @@ class TeraboxService {
       publicUrl: uploadResult.url,
       filename,
       fileSize: uploadResult.fileSize,
-      mimeType: mimeType || 'video/mp4'
+      mimeType: mimeType || 'video/mp4',
+      duration,
+      thumbUrl  // pass through for Video record
     };
   }
 

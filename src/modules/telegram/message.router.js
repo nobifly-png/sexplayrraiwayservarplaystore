@@ -434,7 +434,7 @@ const _handleExternalLink = async (ctx, session, detected, ingestService, linkSe
     const ackMsg = await ctx.reply('⏳ Downloading from TeraBox...');
     try {
       const { VIDEO_TYPE, VIDEO_STATUS } = require('../../common/enums');
-      const { storageKey, publicUrl, filename, fileSize, mimeType } = await teraboxService.convertToR2(detected.url, session.userId);
+      const { storageKey, publicUrl, filename, fileSize, mimeType, duration, thumbUrl } = await teraboxService.convertToR2(detected.url, session.userId);
 
       const video = await Video.create({
         creatorId: session.userId,
@@ -445,6 +445,8 @@ const _handleExternalLink = async (ctx, session, detected, ingestService, linkSe
         fileName: filename,
         mimeType,
         fileSize,
+        durationSeconds: duration || undefined,
+        thumbnailUrl: thumbUrl || undefined,
         status: VIDEO_STATUS.READY,
         uploadSource: 'TELEGRAM_LINK',
         createdViaBot: true

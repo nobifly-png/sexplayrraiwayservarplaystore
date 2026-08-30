@@ -79,7 +79,7 @@ const teraboxController = {
 
       try {
         // Convert: resolve → stream to R2
-        const { storageKey, publicUrl, filename, fileSize, mimeType } = await teraboxService.convertToR2(teraboxUrl, userId);
+        const { storageKey, publicUrl, filename, fileSize, mimeType, duration, thumbUrl } = await teraboxService.convertToR2(teraboxUrl, userId);
 
         // Create Video record
         const video = await Video.create({
@@ -91,6 +91,8 @@ const teraboxController = {
           fileName: filename,
           mimeType,
           fileSize,
+          durationSeconds: duration || undefined,
+          thumbnailUrl: thumbUrl || undefined,
           status: VIDEO_STATUS.READY,
           uploadSource: 'TELEGRAM_LINK',
           createdViaBot: false
