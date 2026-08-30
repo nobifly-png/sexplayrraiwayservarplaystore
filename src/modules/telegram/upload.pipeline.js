@@ -514,4 +514,4 @@ const uploadLargeVideoViaGramJS = async ({
   return { video: finalVideo, link, shareUrl, message: formattedMessage };
 };
 
-module.exports = { uploadTelegramVideo, uploadLargeVideoViaGramJS, duplicateClipNovaVideo, attachThumbnail, getTelegramFileUrl };
+module.exports = { uploadTelegramVideo, uploadLargeVideoViaGramJS, duplicateClipNovaVideo, attachThumbnail, getTelegramFileUrl, formatMessageWithHeaderFooter };
