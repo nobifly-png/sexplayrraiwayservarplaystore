@@ -167,9 +167,15 @@ class TeraboxService {
     const ext = filename.split('.').pop().toLowerCase() || 'mp4';
     const storageKey = buildVideoStorageKey(userId, ext);
 
-    logger.info({ storageKey, fileSize }, 'TeraBox: starting R2 upload');
+    logger.info({ storageKey, fileSize, downloadUrl: downloadUrl.substring(0, 80) }, 'TeraBox: starting R2 upload');
 
-    const uploadResult = await streamUrlToR2(downloadUrl, storageKey, mimeType || 'video/mp4', fileSize);
+    let uploadResult;
+    try {
+      uploadResult = await streamUrlToR2(downloadUrl, storageKey, mimeType || 'video/mp4', fileSize);
+    } catch (err) {
+      logger.error({ err: err.message, downloadUrl: downloadUrl.substring(0, 80) }, 'TeraBox: R2 upload failed');
+      throw new Error(`TeraBox R2 upload failed: ${err.message}`);
+    }
 
     logger.info({ storageKey, uploadedBytes: uploadResult.fileSize }, 'TeraBox: R2 upload complete');
 

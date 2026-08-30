@@ -490,9 +490,11 @@ const _handleExternalLink = async (ctx, session, detected, ingestService, linkSe
                      err.message.includes('rate limit') ? '❌ Too many requests. Please wait.' :
                      err.message.includes('no files') ? '❌ No downloadable files found in this TeraBox link.' :
                      err.message.includes('API key') ? '❌ TeraBox API not configured.' :
-                     '❌ TeraBox download failed. Please try again.';
-      await ctx.telegram.editMessageText(chatId, ackMsg.message_id, undefined, errMsg, {})
-        .catch(() => ctx.reply(errMsg).catch(() => {}));
+                     err.message.includes('HTTP 4') ? '❌ TeraBox link is invalid or expired.' :
+                     err.message.includes('timed out') ? '❌ TeraBox server timed out. Try again.' :
+                     `❌ TeraBox failed: ${err.message.slice(0, 100)}`;
+      await ctx.telegram.deleteMessage(chatId, ackMsg.message_id).catch(() => {});
+      await ctx.reply(errMsg).catch(() => {});
     }
     return;
   }
