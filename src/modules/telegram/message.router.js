@@ -464,9 +464,25 @@ const _handleExternalLink = async (ctx, session, detected, ingestService, linkSe
       const link = await linkService.createLink(session.userId, video._id.toString());
       const shareUrl = `${FRONTEND_URL}/watch/${link.shortCode}`;
 
-      const reply = `✅ TeraBox video uploaded!\n\n📹 ${video.title}\n🔗 ${shareUrl}`;
-      await ctx.telegram.editMessageText(chatId, ackMsg.message_id, undefined, reply, { disable_web_page_preview: true })
-        .catch(() => ctx.reply(reply, { disable_web_page_preview: true }).catch(() => {}));
+      // Delete ack message
+      await ctx.telegram.deleteMessage(chatId, ackMsg.message_id).catch(() => {});
+
+      // Apply user header/footer formatting
+      const { formatMessageWithHeaderFooter } = require('./upload.pipeline');
+      const formattedMsg = await formatMessageWithHeaderFooter(session.userId, shareUrl, video.title)
+        .catch(() => `✅ TeraBox video uploaded!\n\n📹 ${video.title}\n🔗 ${shareUrl}`);
+
+      // Send with thumbnail if available
+      if (thumbUrl) {
+        await ctx.telegram.sendPhoto(chatId, thumbUrl, {
+          caption: formattedMsg,
+          disable_web_page_preview: true
+        }).catch(() =>
+          ctx.telegram.sendMessage(chatId, formattedMsg, { disable_web_page_preview: true }).catch(() => {})
+        );
+      } else {
+        await ctx.telegram.sendMessage(chatId, formattedMsg, { disable_web_page_preview: true }).catch(() => {});
+      }
 
     } catch (err) {
       logger.error({ err: err.message }, 'MessageRouter: TeraBox conversion failed');
