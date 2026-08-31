@@ -443,18 +443,17 @@ const _handleExternalLink = async (ctx, session, detected, ingestService, linkSe
     const ackMsg = await ctx.reply('⏳ Downloading from TeraBox...');
     try {
       const { VIDEO_TYPE, VIDEO_STATUS } = require('../../common/enums');
+      const { attachThumbnail } = require('./upload.pipeline');
+      const { formatMessageWithHeaderFooter } = require('./upload.pipeline');
 
-      // Download forwarded photo (if any) to use as thumbnail — takes priority over TeraBox API thumb
-      let forwardedThumbBuffer = null;
+      // Download forwarded photo FIRST (if any) — this is the real thumbnail
+      let forwardedThumb = null;
       if (ctx.message?.photo?.length) {
-        const downloaded = await downloadTelegramPhoto(ctx.message.photo).catch(() => null);
-        if (downloaded) forwardedThumbBuffer = downloaded;
+        forwardedThumb = await downloadTelegramPhoto(ctx.message.photo).catch(() => null);
+        logger.info({ chatId, hasThumb: !!forwardedThumb }, 'TeraBox: forwarded photo downloaded');
       }
 
       const { storageKey, publicUrl, filename, fileSize, mimeType, duration, thumbUrl } = await teraboxService.convertToR2(detected.url, session.userId);
-
-      // Use forwarded photo URL or TeraBox API thumbnail
-      const finalThumbUrl = thumbUrl || undefined;
 
       const video = await Video.create({
         creatorId: session.userId,
@@ -466,16 +465,27 @@ const _handleExternalLink = async (ctx, session, detected, ingestService, linkSe
         mimeType,
         fileSize,
         durationSeconds: duration || undefined,
-        thumbnailUrl: finalThumbUrl,
+        thumbnailUrl: thumbUrl || undefined, // TeraBox API thumb as initial value
         status: VIDEO_STATUS.READY,
         uploadSource: 'TELEGRAM_LINK',
         createdViaBot: true
       });
 
-      // If forwarded photo exists, upload it to R2 as thumbnail
-      if (forwardedThumbBuffer) {
-        const { attachThumbnail } = require('./upload.pipeline');
-        attachThumbnail(video, forwardedThumbBuffer, null).catch(() => {});
+      // Upload forwarded photo to R2 (AWAIT — not fire-and-forget)
+      // This replaces TeraBox API thumbnail with the actual forwarded thumbnail
+      let displayThumbUrl = thumbUrl; // fallback to TeraBox API thumb
+      if (forwardedThumb) {
+        try {
+          await attachThumbnail(video, forwardedThumb, null);
+          // Re-fetch video to get updated thumbnailUrl
+          const updatedVideo = await Video.findById(video._id).lean();
+          if (updatedVideo?.thumbnailUrl) {
+            displayThumbUrl = updatedVideo.thumbnailUrl;
+            logger.info({ chatId, thumbUrl: displayThumbUrl }, 'TeraBox: forwarded thumbnail attached to R2');
+          }
+        } catch (thumbErr) {
+          logger.warn({ err: thumbErr.message }, 'TeraBox: forwarded thumbnail upload failed, using API thumb');
+        }
       }
 
       const link = await linkService.createLink(session.userId, video._id.toString());
@@ -485,14 +495,12 @@ const _handleExternalLink = async (ctx, session, detected, ingestService, linkSe
       await ctx.telegram.deleteMessage(chatId, ackMsg.message_id).catch(() => {});
 
       // Apply user header/footer formatting
-      const { formatMessageWithHeaderFooter } = require('./upload.pipeline');
       const formattedMsg = await formatMessageWithHeaderFooter(session.userId, shareUrl, video.title)
         .catch(() => `✅ TeraBox video uploaded!\n\n📹 ${video.title}\n🔗 ${shareUrl}`);
 
-      // Send with thumbnail — prefer forwarded photo, fallback to TeraBox API thumb
-      const displayThumb = thumbUrl;
-      if (displayThumb) {
-        await ctx.telegram.sendPhoto(chatId, displayThumb, {
+      // Send with thumbnail — forwarded photo (R2 URL) > TeraBox API thumb > text only
+      if (displayThumbUrl) {
+        await ctx.telegram.sendPhoto(chatId, displayThumbUrl, {
           caption: formattedMsg,
           disable_web_page_preview: true
         }).catch(() =>
