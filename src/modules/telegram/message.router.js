@@ -242,17 +242,25 @@ const routeMessage = async (ctx, session, { ingestService, linkService } = {}) =
     }
 
     // External link (TeraBox, Dailymotion, etc.)
-    // TeraBox: process even if photo is present (photo = thumbnail from channel post, not our thumbnail)
-    // Other sources: only if no photo/video/document in same message
-    const detected = allDetected.length > 0 ? allDetected[0] : null;
-    if (detected) {
-      if (detected.source === SUPPORTED_SOURCES.TERABOX) {
-        // TeraBox with photo — process link, ignore the photo (it's the channel's thumbnail)
-        await _handleExternalLink(ctx, session, detected, ingestService, linkService);
+    // TeraBox: process ALL detected TeraBox links (supports multi-link messages like Part 1,2,3)
+    // Other sources: only first link, only if no photo/video/document
+    const allNonClipnova = allDetected.filter(d => d.source !== SUPPORTED_SOURCES.CLIPNOVA);
+    
+    if (allNonClipnova.length > 0) {
+      const teraboxLinks = allNonClipnova.filter(d => d.source === SUPPORTED_SOURCES.TERABOX);
+      
+      if (teraboxLinks.length > 0) {
+        // Process ALL TeraBox links — each gets its own background job
+        for (const tbLink of teraboxLinks) {
+          await _handleExternalLink(ctx, session, tbLink, ingestService, linkService);
+        }
         return true;
       }
-      if (!msg.photo && !msg.video && !msg.document) {
-        await _handleExternalLink(ctx, session, detected, ingestService, linkService);
+
+      // Non-TeraBox external link — only if no media in message
+      const firstOther = allNonClipnova[0];
+      if (firstOther && !msg.photo && !msg.video && !msg.document) {
+        await _handleExternalLink(ctx, session, firstOther, ingestService, linkService);
         return true;
       }
     }
