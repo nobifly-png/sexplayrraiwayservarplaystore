@@ -173,12 +173,22 @@ class TeraboxService {
 
     logger.info({ storageKey, fileSize, downloadUrl: downloadUrl.substring(0, 80) }, 'TeraBox: starting R2 upload');
 
+    // Retry up to 3 times — TeraBox CDN occasionally returns HTTP 500
     let uploadResult;
-    try {
-      uploadResult = await streamUrlToR2(downloadUrl, storageKey, mimeType || 'video/mp4', fileSize);
-    } catch (err) {
-      logger.error({ err: err.message, downloadUrl: downloadUrl.substring(0, 80) }, 'TeraBox: R2 upload failed');
-      throw new Error(`TeraBox R2 upload failed: ${err.message}`);
+    let lastErr;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        uploadResult = await streamUrlToR2(downloadUrl, storageKey, mimeType || 'video/mp4', fileSize);
+        break;
+      } catch (err) {
+        lastErr = err;
+        logger.warn({ attempt, err: err.message }, `TeraBox: R2 upload attempt ${attempt} failed`);
+        if (attempt < 3) await new Promise(r => setTimeout(r, 2000 * attempt));
+      }
+    }
+    if (!uploadResult) {
+      logger.error({ err: lastErr.message }, 'TeraBox: all 3 R2 upload attempts failed');
+      throw new Error(`TeraBox R2 upload failed after 3 attempts: ${lastErr.message}`);
     }
 
     logger.info({ storageKey, uploadedBytes: uploadResult.fileSize }, 'TeraBox: R2 upload complete');

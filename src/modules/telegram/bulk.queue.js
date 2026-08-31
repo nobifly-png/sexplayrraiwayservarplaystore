@@ -232,23 +232,20 @@ const processNext = (ctx, chatId) => {
       .then((result) => {
         if (result.skipped) q.skipped++; else q.done++;
         q.running--;
-        
-        // Collect result instead of sending immediately
         q.results.push(result);
-        
         processNext(ctx, chatId);
       })
       .catch((err) => {
         q.failed++;
         q.running--;
-        logger.error({ err, chatId }, 'BulkQueue: job failed');
-        
-        // Collect failure result
+        logger.error({ err: err.message, chatId }, 'BulkQueue: job failed');
         q.results.push({ success: false, title: job.title, error: err.message });
-        
         processNext(ctx, chatId);
       })
-      .finally(() => checkAllDone(ctx, chatId));
+      .finally(() => {
+        // Check after a microtask tick to ensure running/queue counts are updated
+        setImmediate(() => checkAllDone(ctx, chatId));
+      });
   }
 };
 
