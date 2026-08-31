@@ -94,10 +94,13 @@ class TelegramBot2Service {
       this.bot.catch((err, ctx) => {
         logger.error({
           errMsg: err.message,
+          stack: err.stack,
           updateType: ctx?.updateType,
           chatId: ctx?.chat?.id
         }, 'Bot2: uncaught handler error');
-        ctx?.reply('Something went wrong. Please try again.').catch(() => {});
+        const userMsg = err.message?.includes('login') ? '🔐 Please /login first.' :
+                        `❌ Error: ${err.message?.slice(0, 100) || 'Unknown error'}`;
+        ctx?.reply(userMsg).catch(() => {});
       });
 
       this.bot.use(async (ctx, next) => {
@@ -199,8 +202,12 @@ class TelegramBot2Service {
     try {
       await fn();
     } catch (err) {
-      logger.error({ errMsg: err.message, chatId: ctx?.chat?.id }, 'Bot2: handler threw');
-      ctx?.reply('An error occurred. Please try again.').catch(() => {});
+      logger.error({ errMsg: err.message, stack: err.stack, chatId: ctx?.chat?.id, bot: 'bot2' }, 'Bot2: handler threw');
+      const userMsg = err.message?.includes('login') ? '🔐 Please /login first.' :
+                      err.message?.includes('not found') ? `❌ ${err.message}` :
+                      err.message?.includes('not available') ? `❌ ${err.message}` :
+                      `❌ Error: ${err.message?.slice(0, 100) || 'Unknown error'}`;
+      ctx?.reply(userMsg).catch(() => {});
     }
   };
 
