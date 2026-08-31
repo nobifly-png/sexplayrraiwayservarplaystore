@@ -85,7 +85,35 @@ router.get('/watch/:shortCode', async (req, res) => {
     <p>If the app does not open, please install Zexplayer.</p>
   </div>
   <script>
-    window.location.href = '${deepLink}';
+    (function () {
+      var shortCode = '${shortCode}';
+      var fallbackUrl = '${e(appUrl)}';
+      var ua = navigator.userAgent || '';
+      var isAndroid = /Android/i.test(ua);
+
+      if (isAndroid) {
+        // intent:// URL is understood directly by Android as an OS Intent.
+        // This bypasses the WebView custom-scheme block that affects Android 8/9
+        // where window.location.href = 'novax://...' on page load gets silently ignored.
+        var intentUrl =
+          'intent://watch/' + shortCode +
+          '#Intent' +
+          ';scheme=novax' +
+          ';package=com.novax.player.novax_player' +
+          ';S.browser_fallback_url=' + encodeURIComponent(fallbackUrl) +
+          ';end';
+        window.location.href = intentUrl;
+      } else {
+        // iOS and desktop — custom scheme redirect works fine
+        window.location.href = '${deepLink}';
+      }
+
+      // If the app didn't open after 2.5 seconds, update the status text
+      setTimeout(function () {
+        var p = document.querySelector('p');
+        if (p) p.textContent = 'App not found. Please install Zexplayer.';
+      }, 2500);
+    })();
   </script>
 </body>
 </html>`);
