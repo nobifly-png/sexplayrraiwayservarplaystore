@@ -1,4 +1,4 @@
-/**
+ /**
  * TeraBox Service
  * Resolves TeraBox share links via AR Digital Services API,
  * streams the file to Cloudflare R2, and returns a Zaxgram link.
@@ -174,16 +174,28 @@ class TeraboxService {
     logger.info({ storageKey, fileSize, downloadUrl: downloadUrl.substring(0, 80) }, 'TeraBox: starting R2 upload');
 
     // Retry up to 3 times — TeraBox CDN occasionally returns HTTP 500
+    // On each retry, re-resolve link to get a fresh direct_link URL
     let uploadResult;
     let lastErr;
+    let currentDownloadUrl = downloadUrl;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        uploadResult = await streamUrlToR2(downloadUrl, storageKey, mimeType || 'video/mp4', fileSize);
+        uploadResult = await streamUrlToR2(currentDownloadUrl, storageKey, mimeType || 'video/mp4', fileSize);
         break;
       } catch (err) {
         lastErr = err;
         logger.warn({ attempt, err: err.message }, `TeraBox: R2 upload attempt ${attempt} failed`);
-        if (attempt < 3) await new Promise(r => setTimeout(r, 2000 * attempt));
+        if (attempt < 3) {
+          await new Promise(r => setTimeout(r, 3000 * attempt)); // 3s, 6s backoff
+          // Re-resolve to get a fresh direct_link (old one may have expired)
+          try {
+            const fresh = await this.resolveLink(shareUrl);
+            currentDownloadUrl = fresh.downloadUrl;
+            logger.info({ attempt: attempt + 1 }, 'TeraBox: got fresh direct_link for retry');
+          } catch (resolveErr) {
+            logger.warn({ err: resolveErr.message }, 'TeraBox: re-resolve failed, using same URL');
+          }
+        }
       }
     }
     if (!uploadResult) {

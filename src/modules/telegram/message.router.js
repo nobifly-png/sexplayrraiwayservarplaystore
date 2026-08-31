@@ -448,84 +448,96 @@ const _handleExternalLink = async (ctx, session, detected, ingestService, linkSe
 
   // ── TeraBox: full download → R2 upload ───────────────────────────────────
   if (detected.source === SUPPORTED_SOURCES.TERABOX) {
-    const ackMsg = await ctx.reply('⏳ Downloading from TeraBox...');
-    try {
-      const { VIDEO_TYPE, VIDEO_STATUS } = require('../../common/enums');
-      const { attachThumbnail, formatMessageWithHeaderFooter } = require('./upload.pipeline');
+    // Send ack IMMEDIATELY and return — detach long-running job from Telegraf's 90s timeout
+    const ackMsg = await ctx.reply('⏳ Downloading from TeraBox... (may take 30-60 seconds)');
 
-      // PARALLEL: Download forwarded photo + resolve TeraBox link simultaneously
-      const [forwardedThumb, teraboxResult] = await Promise.all([
-        ctx.message?.photo?.length
-          ? downloadTelegramPhoto(ctx.message.photo, ctx).catch(() => null)
-          : Promise.resolve(null),
-        teraboxService.convertToR2(detected.url, session.userId)
-      ]);
+    // Capture all needed values BEFORE going async (ctx may become invalid later)
+    const capturedChatId = chatId;
+    const capturedUserId = session.userId;
+    const capturedUrl = detected.url;
+    const capturedPhoto = ctx.message?.photo?.length ? ctx.message.photo : null;
+    const capturedTelegram = ctx.telegram;
+    const capturedAckMsgId = ackMsg.message_id;
 
-      const { storageKey, filename, fileSize, mimeType, duration, thumbUrl } = teraboxResult;
+    // Run entirely in background — NOT awaited, completely outside Telegraf's timeout
+    setImmediate(async () => {
+      try {
+        const { VIDEO_TYPE, VIDEO_STATUS } = require('../../common/enums');
+        const { attachThumbnail, formatMessageWithHeaderFooter } = require('./upload.pipeline');
 
-      // Create video record with TeraBox API thumb as initial value
-      const video = await Video.create({
-        creatorId: session.userId,
-        title: filename.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ').slice(0, 200) || 'TeraBox Video',
-        description: 'Imported from TeraBox',
-        type: VIDEO_TYPE.DIRECT_UPLOAD,
-        storageKey,
-        fileName: filename,
-        mimeType,
-        fileSize,
-        durationSeconds: duration || undefined,
-        thumbnailUrl: thumbUrl || undefined,
-        status: VIDEO_STATUS.READY,
-        uploadSource: 'TELEGRAM_LINK',
-        createdViaBot: true
-      });
+        // PARALLEL: Download forwarded photo + resolve TeraBox link simultaneously
+        const [forwardedThumb, teraboxResult] = await Promise.all([
+          capturedPhoto
+            ? downloadTelegramPhoto(capturedPhoto, ctx).catch(() => null)
+            : Promise.resolve(null),
+          teraboxService.convertToR2(capturedUrl, capturedUserId)
+        ]);
 
-      // PARALLEL: Create share link + upload forwarded thumbnail simultaneously
-      let displayThumbUrl = thumbUrl;
-      const [link] = await Promise.all([
-        linkService.createLink(session.userId, video._id.toString()),
-        forwardedThumb
-          ? attachThumbnail(video, forwardedThumb, null)
-              .then(() => Video.findById(video._id).lean())
-              .then(updated => { if (updated?.thumbnailUrl) displayThumbUrl = updated.thumbnailUrl; })
-              .catch(() => {}) // fallback to TeraBox API thumb on failure
-          : Promise.resolve()
-      ]);
+        const { storageKey, filename, fileSize, mimeType, duration, thumbUrl } = teraboxResult;
 
-      const shareUrl = `${FRONTEND_URL}/watch/${link.shortCode}`;
+        const video = await Video.create({
+          creatorId: capturedUserId,
+          title: filename.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ').slice(0, 200) || 'TeraBox Video',
+          description: 'Imported from TeraBox',
+          type: VIDEO_TYPE.DIRECT_UPLOAD,
+          storageKey,
+          fileName: filename,
+          mimeType,
+          fileSize,
+          durationSeconds: duration || undefined,
+          thumbnailUrl: thumbUrl || undefined,
+          status: VIDEO_STATUS.READY,
+          uploadSource: 'TELEGRAM_LINK',
+          createdViaBot: true
+        });
 
-      // Delete ack message
-      await ctx.telegram.deleteMessage(chatId, ackMsg.message_id).catch(() => {});
+        // PARALLEL: Create share link + upload forwarded thumbnail simultaneously
+        let displayThumbUrl = thumbUrl;
+        const [link] = await Promise.all([
+          linkService.createLink(capturedUserId, video._id.toString()),
+          forwardedThumb
+            ? attachThumbnail(video, forwardedThumb, null)
+                .then(() => Video.findById(video._id).lean())
+                .then(updated => { if (updated?.thumbnailUrl) displayThumbUrl = updated.thumbnailUrl; })
+                .catch(() => {})
+            : Promise.resolve()
+        ]);
 
-      // Apply user header/footer formatting
-      const formattedMsg = await formatMessageWithHeaderFooter(session.userId, shareUrl, video.title)
-        .catch(() => `✅ TeraBox video uploaded!\n\n📹 ${video.title}\n🔗 ${shareUrl}`);
+        const shareUrl = `${FRONTEND_URL}/watch/${link.shortCode}`;
 
-      // Send with thumbnail
-      if (displayThumbUrl) {
-        await ctx.telegram.sendPhoto(chatId, displayThumbUrl, {
-          caption: formattedMsg,
-          disable_web_page_preview: true
-        }).catch(() =>
-          ctx.telegram.sendMessage(chatId, formattedMsg, { disable_web_page_preview: true }).catch(() => {})
-        );
-      } else {
-        await ctx.telegram.sendMessage(chatId, formattedMsg, { disable_web_page_preview: true }).catch(() => {});
+        // Delete ack message
+        await capturedTelegram.deleteMessage(capturedChatId, capturedAckMsgId).catch(() => {});
+
+        // Apply user header/footer formatting
+        const formattedMsg = await formatMessageWithHeaderFooter(capturedUserId, shareUrl, video.title)
+          .catch(() => `✅ TeraBox video uploaded!\n\n📹 ${video.title}\n🔗 ${shareUrl}`);
+
+        // Send with thumbnail
+        if (displayThumbUrl) {
+          await capturedTelegram.sendPhoto(capturedChatId, displayThumbUrl, {
+            caption: formattedMsg,
+            disable_web_page_preview: true
+          }).catch(() =>
+            capturedTelegram.sendMessage(capturedChatId, formattedMsg, { disable_web_page_preview: true }).catch(() => {})
+          );
+        } else {
+          await capturedTelegram.sendMessage(capturedChatId, formattedMsg, { disable_web_page_preview: true }).catch(() => {});
+        }
+
+      } catch (err) {
+        logger.error({ err: err.message, chatId: capturedChatId }, 'TeraBox: background job failed');
+        const errMsg = err.message.includes('quota') ? '❌ TeraBox daily quota exceeded. Try again tomorrow.' :
+                       err.message.includes('rate limit') ? '❌ Too many requests. Please wait.' :
+                       err.message.includes('HTTP 500') ? '❌ TeraBox server error. Please try again in a minute.' :
+                       err.message.includes('HTTP 4') ? '❌ TeraBox link is invalid or expired.' :
+                       err.message.includes('timed out') ? '❌ TeraBox server timed out. Try again.' :
+                       `❌ TeraBox failed: ${err.message.slice(0, 100)}`;
+        await capturedTelegram.deleteMessage(capturedChatId, capturedAckMsgId).catch(() => {});
+        await capturedTelegram.sendMessage(capturedChatId, errMsg).catch(() => {});
       }
+    });
 
-    } catch (err) {
-      logger.error({ err: err.message }, 'MessageRouter: TeraBox conversion failed');
-      const errMsg = err.message.includes('quota') ? '❌ TeraBox daily quota exceeded. Try again tomorrow.' :
-                     err.message.includes('rate limit') ? '❌ Too many requests. Please wait.' :
-                     err.message.includes('no files') ? '❌ No downloadable files found in this TeraBox link.' :
-                     err.message.includes('API key') ? '❌ TeraBox API not configured.' :
-                     err.message.includes('HTTP 4') ? '❌ TeraBox link is invalid or expired.' :
-                     err.message.includes('timed out') ? '❌ TeraBox server timed out. Try again.' :
-                     `❌ TeraBox failed: ${err.message.slice(0, 100)}`;
-      await ctx.telegram.deleteMessage(chatId, ackMsg.message_id).catch(() => {});
-      await ctx.reply(errMsg).catch(() => {});
-    }
-    return;
+    return; // Return immediately — job runs in background
   }
 
   // ── Other external links (Dailymotion, Streamtape, etc.) → EXTERNAL_REF ─
