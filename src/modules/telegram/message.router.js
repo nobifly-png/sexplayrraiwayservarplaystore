@@ -57,15 +57,23 @@ const _getPhotoFileInfo = async (botToken, fileId) => {
 };
 
 /* ─── Download Telegram photo to buffer ─────────────────────────────────── */
-const downloadTelegramPhoto = async (photoArray) => {
+const downloadTelegramPhoto = async (photoArray, ctx = null) => {
   try {
     const https = require('https');
     const http = require('http');
     const photo = photoArray[photoArray.length - 1]; // highest resolution
-    const botToken = telegramConfig.botToken;
 
-    const { result: fileInfo, apiBase } = await _getPhotoFileInfo(botToken, photo.file_id);
-    const downloadUrl = `${apiBase}/file/bot${botToken}/${fileInfo.file_path}`;
+    // Use ctx.telegram.getFile if available — works for both bot1 and bot2
+    // Otherwise fall back to bot1 token (legacy)
+    let downloadUrl;
+    if (ctx && ctx.telegram) {
+      const fileInfo = await ctx.telegram.getFile(photo.file_id);
+      downloadUrl = `https://api.telegram.org/file/bot${ctx.telegram.token}/${fileInfo.file_path}`;
+    } else {
+      const botToken = telegramConfig.botToken;
+      const { result: fileInfo, apiBase } = await _getPhotoFileInfo(botToken, photo.file_id);
+      downloadUrl = `${apiBase}/file/bot${botToken}/${fileInfo.file_path}`;
+    }
 
     // Auto-detect protocol based on URL
     const proto = downloadUrl.startsWith('https') ? https : http;
@@ -131,7 +139,7 @@ const routeMessage = async (ctx, session, { ingestService, linkService } = {}) =
       // Download thumbnail from this message (if any)
       let overrideThumb = null;
       if (msg.photo?.length) {
-        overrideThumb = await downloadTelegramPhoto(msg.photo);
+        overrideThumb = await downloadTelegramPhoto(msg.photo, ctx);
       }
 
       // ── SINGLE link in message ────────────────────────────────────────────
@@ -302,7 +310,7 @@ const routeMessage = async (ctx, session, { ingestService, linkService } = {}) =
 const _handlePhotoOnly = async (ctx, session) => {
   if (!session.userId) return ctx.reply('🔐 Please /login first.');
 
-  const downloaded = await downloadTelegramPhoto(ctx.message.photo);
+  const downloaded = await downloadTelegramPhoto(ctx.message.photo, ctx);
   if (downloaded) {
     const replaced = setPending(ctx.chat.id, downloaded.buffer, downloaded.mimeType);
     logger.info({ chatId: ctx.chat.id, replaced }, 'MessageRouter: pending thumbnail cached');
@@ -449,7 +457,7 @@ const _handleExternalLink = async (ctx, session, detected, ingestService, linkSe
       // Download forwarded photo FIRST (if any) — this is the real thumbnail
       let forwardedThumb = null;
       if (ctx.message?.photo?.length) {
-        forwardedThumb = await downloadTelegramPhoto(ctx.message.photo).catch(() => null);
+        forwardedThumb = await downloadTelegramPhoto(ctx.message.photo, ctx).catch(() => null);
         logger.info({ chatId, hasThumb: !!forwardedThumb }, 'TeraBox: forwarded photo downloaded');
       }
 
