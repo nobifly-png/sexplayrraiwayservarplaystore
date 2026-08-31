@@ -5,6 +5,7 @@ const { port, env, validateRuntimeConfig } = require('./config/env');
 const mongoose = require('mongoose');
 const { startJobs, stopJobs } = require('./jobs');
 const telegramBot = require('./modules/telegram/telegram.bot');
+const telegramBot2 = require('./modules/telegram/telegram.bot2');
 
 let server;
 let isShuttingDown = false;
@@ -22,6 +23,7 @@ const shutdown = async (signal) => {
   try {
     // 1. Stop Telegram polling first (prevents 409 on restart)
     await telegramBot.stop(signal);
+    await telegramBot2.stop(signal);
 
     // 2. Stop cron jobs
     stopJobs();
@@ -61,6 +63,11 @@ const startServer = async () => {
     // Non-blocking, non-fatal — server starts regardless of bot status
     telegramBot.initialize().catch((err) =>
       logger.error({ err }, 'Telegram bot initialization failed (non-fatal)')
+    );
+
+    // Bot2 — TeraBox converter bot (optional, starts only if TELEGRAM_BOT2_TOKEN is set)
+    telegramBot2.initialize().catch((err) =>
+      logger.error({ err }, 'Telegram bot2 initialization failed (non-fatal)')
     );
 
     server = app.listen(port, () => {
