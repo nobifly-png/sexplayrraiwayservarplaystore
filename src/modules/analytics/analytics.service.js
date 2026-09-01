@@ -23,12 +23,9 @@ const buildDateMatch = (startDate, endDate) => {
 const calculateCountedViews = (realViews) =>
   Math.floor(realViews / VIEW_TO_COUNTED_RATIO);
 
-const calculateDisplayEarnings = (realViews, totalEarnings) => {
-  const completeViews = Math.floor(realViews / VIEW_TO_COUNTED_RATIO);
-  if (completeViews === 0 || realViews === 0) return 0;
-  const earningsPerSession = totalEarnings / realViews;
-  return completeViews * VIEW_TO_COUNTED_RATIO * earningsPerSession;
-};
+// Simply return the actual earnings stored in DB — no recalculation needed.
+// Old rate ($0.13) was applied at write time; recalculating distorts the number.
+const calculateDisplayEarnings = (_realViews, totalEarnings) => totalEarnings;
 
 // ---------------------------------------------------------------------------
 
@@ -196,7 +193,7 @@ class AnalyticsService {
 
     return {
       // Platform totals — live from ViewLedger
-      totalViews: calculateCountedViews(totalRealViews),
+      totalViews: calculateCountedViews(validRealViews) + calculateCountedViews(rejectedRealViews),
       validViews: calculateCountedViews(validRealViews),
       rejectedViews: calculateCountedViews(rejectedRealViews),
       totalEarnings: calculateDisplayEarnings(validRealViews, totalEarnings),
