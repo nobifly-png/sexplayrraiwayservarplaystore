@@ -25,6 +25,20 @@ app.use(cookieParser());
 app.use('/api', accessLog);
 app.use('/api', routes);
 
+// App version check — Flutter app polls this on startup (once per day)
+// To release a new version: update latestVersion + latestBuildNumber
+// forceUpdate: true  → user cannot skip (use for critical bug fixes)
+// forceUpdate: false → user can dismiss (normal updates)
+app.get('/app-version.json', (req, res) => {
+  res.json({
+    latestVersion: '1.3.0',
+    latestBuildNumber: 17,
+    releaseNotes: 'Bug fixes aur performance improvements',
+    downloadUrl: 'https://play.google.com/store/apps/details?id=com.novax.player.novax_player',
+    forceUpdate: false
+  });
+});
+
 // Android App Links verification
 app.get('/.well-known/assetlinks.json', (req, res) => {
   res.json([{
