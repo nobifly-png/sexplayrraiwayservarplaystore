@@ -192,8 +192,9 @@ class AnalyticsService {
     const totalEarnings = earningsResult[0]?.totalEarnings || 0;
 
     return {
-      // Platform totals — live from ViewLedger
-      totalViews: calculateCountedViews(validRealViews) + calculateCountedViews(rejectedRealViews),
+      // Platform totals — live from ViewLedger, same 4:1 ratio as creator dashboard
+      // All values divided by VIEW_TO_COUNTED_RATIO so super admin sees same scale as creators
+      totalViews: calculateCountedViews(totalRealViews),
       validViews: calculateCountedViews(validRealViews),
       rejectedViews: calculateCountedViews(rejectedRealViews),
       totalEarnings: calculateDisplayEarnings(validRealViews, totalEarnings),
