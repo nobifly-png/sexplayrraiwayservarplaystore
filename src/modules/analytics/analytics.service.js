@@ -76,9 +76,9 @@ class AnalyticsService {
 
     return {
       video: { id: video._id, title: video.title, type: video.type },
-      totalViews: calculateCountedViews(totalRealViews),
-      validViews: calculateCountedViews(validRealViews),
-      rejectedViews: calculateCountedViews(rejectedRealViews),
+      totalViews:    calculateCountedViews(validRealViews),
+      validViews:    calculateCountedViews(validRealViews),
+      rejectedViews: rejectedRealViews,
       totalEarnings: calculateDisplayEarnings(validRealViews, totalEarnings)
     };
   }
@@ -136,9 +136,9 @@ class AnalyticsService {
 
     return {
       link: { id: link._id, shortCode: link.shortCode, isActive: link.isActive },
-      totalViews: calculateCountedViews(totalRealViews),
-      validViews: calculateCountedViews(validRealViews),
-      rejectedViews: calculateCountedViews(rejectedRealViews),
+      totalViews:    calculateCountedViews(validRealViews),
+      validViews:    calculateCountedViews(validRealViews),
+      rejectedViews: rejectedRealViews,
       totalEarnings: calculateDisplayEarnings(validRealViews, totalEarnings)
     };
   }
@@ -197,11 +197,10 @@ class AnalyticsService {
         {
           $project: {
             _id: 1,
-            // counted views (÷4) — what creator sees on their dashboard
-            validViews:    { $floor: { $divide: ['$validRaw',    VIEW_TO_COUNTED_RATIO] } },
-            rejectedViews: { $floor: { $divide: ['$rejectedRaw', VIEW_TO_COUNTED_RATIO] } },
+            // totalViews = counted valid (÷4) — same as what creator sees
+            validViews:    { $floor: { $divide: ['$validRaw', VIEW_TO_COUNTED_RATIO] } },
+            rejectedViews: '$rejectedRaw',  // raw count — actual rejections
             // pendingViews = raw views since last snapshot (not yet shown to creator)
-            // = total raw views now  minus  raw total views at last snapshot time
             pendingViews: {
               $max: [
                 0,
@@ -223,10 +222,10 @@ class AnalyticsService {
     const totalEarnings = earningsResult[0]?.totalEarnings || 0;
 
     return {
-      // Platform totals — live, same 4:1 ratio as creator dashboard
-      totalViews:    calculateCountedViews(totalRealViews),
+      // Platform totals — totalViews = counted valid, rejectedViews = raw actual count
+      totalViews:    calculateCountedViews(validRealViews),
       validViews:    calculateCountedViews(validRealViews),
-      rejectedViews: calculateCountedViews(rejectedRealViews),
+      rejectedViews: rejectedRealViews,
       totalEarnings: calculateDisplayEarnings(validRealViews, totalEarnings),
       // Top creators with pending views (views arrived since last snapshot)
       topCreators: topCreatorsRaw

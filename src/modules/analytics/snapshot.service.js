@@ -37,9 +37,11 @@ class SnapshotService {
     const rawEarnings = earningsResult[0]?.totalEarnings || 0;
 
     const snapshot = {
-      totalViews: calculateCountedViews(totalRealViews),
-      validViews: calculateCountedViews(validRealViews),
-      rejectedViews: calculateCountedViews(rejectedRealViews),
+      // totalViews = counted valid views (4:1) — this is what the creator "earned"
+      // rejectedViews = raw count — actual number of rejected sessions
+      totalViews:    calculateCountedViews(validRealViews),
+      validViews:    calculateCountedViews(validRealViews),
+      rejectedViews: rejectedRealViews,
       totalEarnings: calculateDisplayEarnings(validRealViews, rawEarnings),
       rawValidViews: validRealViews,
       rawTotalViews: totalRealViews,
