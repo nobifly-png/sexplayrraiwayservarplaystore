@@ -145,16 +145,15 @@ class AnalyticsService {
 
   /**
    * Admin dashboard.
-   * - Platform totals (totalViews, validViews, rejectedViews, totalEarnings)
-   *   remain live from ViewLedger so admin always sees real-time platform health.
-   * - Top Creators section reads from ViewSnapshot so the numbers shown here
-   *   match exactly what each creator sees on their own dashboard — critical for
-   *   correct payment amounts.
+   * - Platform totals: live from ViewLedger
+   * - Top Creators: live from ViewLedger with validViews, rejectedViews, pendingViews, earnings
+   *   pendingViews = raw views that came in AFTER the last snapshot (not yet counted in creator dashboard)
    */
   async getAdminDashboard({ startDate, endDate } = {}) {
     const dateMatch = buildDateMatch(startDate, endDate);
+    const ViewSnapshot = require('./viewSnapshot.model');
 
-    const [totalRealViews, validRealViews, rejectedRealViews, earningsResult, topSnapshotsRaw] = await Promise.all([
+    const [totalRealViews, validRealViews, rejectedRealViews, earningsResult, topCreatorsRaw] = await Promise.all([
       // Platform-wide totals — live
       ViewLedger.countDocuments(dateMatch),
       ViewLedger.countDocuments({ ...dateMatch, viewType: VIEW_TYPE.VALID }),
@@ -163,15 +162,15 @@ class AnalyticsService {
         { $match: { ...dateMatch, viewType: VIEW_TYPE.VALID } },
         { $group: { _id: null, totalEarnings: { $sum: '$earningsAmount' } } }
       ]),
-      // Top creators — live from ViewLedger so we can include validViews + rejectedViews + earnings
+      // Top creators — all raw counts from ViewLedger, pendingViews calculated below
       ViewLedger.aggregate([
         { $match: dateMatch },
         {
           $group: {
             _id: '$creatorId',
-            validViews:    { $sum: { $cond: [{ $eq: ['$viewType', VIEW_TYPE.VALID] },    1, 0] } },
-            rejectedViews: { $sum: { $cond: [{ $eq: ['$viewType', VIEW_TYPE.REJECTED] }, 1, 0] } },
-            earnings:      { $sum: '$earningsAmount' }
+            validRaw:    { $sum: { $cond: [{ $eq: ['$viewType', VIEW_TYPE.VALID] },    1, 0] } },
+            rejectedRaw: { $sum: { $cond: [{ $eq: ['$viewType', VIEW_TYPE.REJECTED] }, 1, 0] } },
+            earnings:    { $sum: '$earningsAmount' }
           }
         },
         { $sort: { earnings: -1 } },
@@ -185,13 +184,36 @@ class AnalyticsService {
           }
         },
         { $unwind: { path: '$creator', preserveNullAndEmptyArrays: true } },
+        // Pull latest snapshot to calculate pendingViews
+        {
+          $lookup: {
+            from: 'viewsnapshots',
+            localField: '_id',
+            foreignField: 'creatorId',
+            as: 'snapshot'
+          }
+        },
+        { $unwind: { path: '$snapshot', preserveNullAndEmptyArrays: true } },
         {
           $project: {
             _id: 1,
-            // Apply 4:1 ratio to match what creators see on their own dashboard
-            validViews:    { $floor: { $divide: ['$validViews',    VIEW_TO_COUNTED_RATIO] } },
-            rejectedViews: { $floor: { $divide: ['$rejectedViews', VIEW_TO_COUNTED_RATIO] } },
-            earnings:      1,
+            // counted views (÷4) — what creator sees on their dashboard
+            validViews:    { $floor: { $divide: ['$validRaw',    VIEW_TO_COUNTED_RATIO] } },
+            rejectedViews: { $floor: { $divide: ['$rejectedRaw', VIEW_TO_COUNTED_RATIO] } },
+            // pendingViews = raw views since last snapshot (not yet shown to creator)
+            // = total raw views now  minus  raw total views at last snapshot time
+            pendingViews: {
+              $max: [
+                0,
+                {
+                  $subtract: [
+                    { $add: ['$validRaw', '$rejectedRaw'] },
+                    { $ifNull: ['$snapshot.rawTotalViews', 0] }
+                  ]
+                }
+              ]
+            },
+            earnings: 1,
             creator: { name: '$creator.name', email: '$creator.email' }
           }
         }
@@ -201,14 +223,13 @@ class AnalyticsService {
     const totalEarnings = earningsResult[0]?.totalEarnings || 0;
 
     return {
-      // Platform totals — live from ViewLedger, same 4:1 ratio as creator dashboard
-      // All values divided by VIEW_TO_COUNTED_RATIO so super admin sees same scale as creators
-      totalViews: calculateCountedViews(totalRealViews),
-      validViews: calculateCountedViews(validRealViews),
+      // Platform totals — live, same 4:1 ratio as creator dashboard
+      totalViews:    calculateCountedViews(totalRealViews),
+      validViews:    calculateCountedViews(validRealViews),
       rejectedViews: calculateCountedViews(rejectedRealViews),
       totalEarnings: calculateDisplayEarnings(validRealViews, totalEarnings),
-      // Top creators — snapshot values (match creator's own dashboard exactly)
-      topCreators: topSnapshotsRaw
+      // Top creators with pending views (views arrived since last snapshot)
+      topCreators: topCreatorsRaw
     };
   }
 }
