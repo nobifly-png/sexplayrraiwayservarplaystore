@@ -144,17 +144,16 @@ class AnalyticsService {
   }
 
   /**
-   * Admin dashboard.
-   * - Platform totals: live from ViewLedger
-   * - Top Creators: live from ViewLedger with validViews, rejectedViews, pendingViews, earnings
-   *   pendingViews = raw views that came in AFTER the last snapshot (not yet counted in creator dashboard)
+   * Super Admin dashboard.
+   * - Platform totals: RAW counts (no ÷4 ratio) — super admin sees actual numbers
+   * - Top Creators: RAW validViews, RAW rejectedViews, pendingViews, earnings
    */
   async getAdminDashboard({ startDate, endDate } = {}) {
     const dateMatch = buildDateMatch(startDate, endDate);
     const ViewSnapshot = require('./viewSnapshot.model');
 
     const [totalRealViews, validRealViews, rejectedRealViews, earningsResult, topCreatorsRaw] = await Promise.all([
-      // Platform-wide totals — live
+      // Platform-wide totals — live RAW counts
       ViewLedger.countDocuments(dateMatch),
       ViewLedger.countDocuments({ ...dateMatch, viewType: VIEW_TYPE.VALID }),
       ViewLedger.countDocuments({ ...dateMatch, viewType: VIEW_TYPE.REJECTED }),
@@ -162,7 +161,7 @@ class AnalyticsService {
         { $match: { ...dateMatch, viewType: VIEW_TYPE.VALID } },
         { $group: { _id: null, totalEarnings: { $sum: '$earningsAmount' } } }
       ]),
-      // Top creators — all raw counts from ViewLedger, pendingViews calculated below
+      // Top creators — RAW counts, no division
       ViewLedger.aggregate([
         { $match: dateMatch },
         {
@@ -184,7 +183,6 @@ class AnalyticsService {
           }
         },
         { $unwind: { path: '$creator', preserveNullAndEmptyArrays: true } },
-        // Pull latest snapshot to calculate pendingViews
         {
           $lookup: {
             from: 'viewsnapshots',
@@ -197,10 +195,10 @@ class AnalyticsService {
         {
           $project: {
             _id: 1,
-            // totalViews = counted valid (÷4) — same as what creator sees
-            validViews:    { $floor: { $divide: ['$validRaw', VIEW_TO_COUNTED_RATIO] } },
-            rejectedViews: '$rejectedRaw',  // raw count — actual rejections
-            // pendingViews = raw views since last snapshot (not yet shown to creator)
+            // Super admin sees RAW actual counts — no ÷4 division
+            validViews:    '$validRaw',
+            rejectedViews: '$rejectedRaw',
+            // pendingViews = views since last snapshot (for reference)
             pendingViews: {
               $max: [
                 0,
@@ -222,12 +220,12 @@ class AnalyticsService {
     const totalEarnings = earningsResult[0]?.totalEarnings || 0;
 
     return {
-      // Platform totals — totalViews = counted valid, rejectedViews = raw actual count
-      totalViews:    calculateCountedViews(validRealViews),
-      validViews:    calculateCountedViews(validRealViews),
+      // Super admin platform totals — RAW actual numbers, no ÷4
+      totalViews:    totalRealViews,
+      validViews:    validRealViews,
       rejectedViews: rejectedRealViews,
-      totalEarnings: calculateDisplayEarnings(validRealViews, totalEarnings),
-      // Top creators with pending views (views arrived since last snapshot)
+      totalEarnings: totalEarnings,
+      // Top creators with RAW counts
       topCreators: topCreatorsRaw
     };
   }
