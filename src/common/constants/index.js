@@ -1,10 +1,10 @@
 const ALLOWED_VIDEO_MIME_TYPES = ['video/mp4', 'video/quicktime', 'video/webm'];
 const MAX_UPLOAD_SIZE_BYTES = 1073741824; // 1GB
 const MIN_WATCH_SECONDS = 5;
-const MAX_VIEWS_PER_IP_PER_HOUR = 10;
+const MAX_VIEWS_PER_IP_PER_HOUR = 10; // kept for reference, not enforced
 const MIN_WITHDRAWAL_AMOUNT = 100;
 const DEFAULT_EARNINGS_PER_VIEW = 0.001; // $0.001 per view (4 views = 1 counted view, $4 per 1000 counted views)
-const VIEW_TO_COUNTED_RATIO = 4; // 4 real views = 1 counted view
+const VIEW_TO_COUNTED_RATIO = 4; // 4 real views = 1 counted view — every 4th view is VALID, rest are REJECTED
 const CURRENCY = 'USD';
 const SHORT_CODE_LENGTH = 8;
 const UPLOAD_INTENT_EXPIRY_MINUTES = 30;

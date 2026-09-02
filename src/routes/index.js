@@ -11,7 +11,6 @@ const analyticsRoutes = require('../modules/analytics/analytics.routes');
 const adminRoutes = require('../modules/admin/admin.routes');
 const settingsRoutes = require('../modules/settings/settings.routes');
 const teraboxRoutes = require('../modules/terabox/terabox.routes');
-const fraudRoutes = require('../modules/fraud/fraud.routes');
 const userRoutes = require('../modules/users/user.routes');
 const linkController = require('../modules/links/link.controller');
 const validateParams = require('../middlewares/validateParams.middleware');
@@ -38,7 +37,6 @@ router.use('/withdrawals', withdrawalRoutes);
 router.use('/analytics', analyticsRoutes);
 router.use('/admin', adminRoutes);
 router.use('/settings', settingsRoutes);
-router.use('/fraud', fraudRoutes);
 router.use('/terabox', teraboxRoutes);
 
 router.get('/health', (req, res) => {
