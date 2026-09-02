@@ -153,7 +153,6 @@ class AnalyticsService {
    */
   async getAdminDashboard({ startDate, endDate } = {}) {
     const dateMatch = buildDateMatch(startDate, endDate);
-    const ViewSnapshot = require('./viewSnapshot.model');
 
     const [totalRealViews, validRealViews, rejectedRealViews, earningsResult, topSnapshotsRaw] = await Promise.all([
       // Platform-wide totals — live
@@ -164,14 +163,23 @@ class AnalyticsService {
         { $match: { ...dateMatch, viewType: VIEW_TYPE.VALID } },
         { $group: { _id: null, totalEarnings: { $sum: '$earningsAmount' } } }
       ]),
-      // Top creators — from snapshot (same numbers as creator dashboard)
-      ViewSnapshot.aggregate([
-        { $sort: { totalEarnings: -1 } },
+      // Top creators — live from ViewLedger so we can include validViews + rejectedViews + earnings
+      ViewLedger.aggregate([
+        { $match: dateMatch },
+        {
+          $group: {
+            _id: '$creatorId',
+            validViews:    { $sum: { $cond: [{ $eq: ['$viewType', VIEW_TYPE.VALID] },    1, 0] } },
+            rejectedViews: { $sum: { $cond: [{ $eq: ['$viewType', VIEW_TYPE.REJECTED] }, 1, 0] } },
+            earnings:      { $sum: '$earningsAmount' }
+          }
+        },
+        { $sort: { earnings: -1 } },
         { $limit: 10 },
         {
           $lookup: {
             from: 'users',
-            localField: 'creatorId',
+            localField: '_id',
             foreignField: '_id',
             as: 'creator'
           }
@@ -179,10 +187,11 @@ class AnalyticsService {
         { $unwind: { path: '$creator', preserveNullAndEmptyArrays: true } },
         {
           $project: {
-            _id: '$creatorId',
-            validViews: '$validViews',       // already counted (4:1 applied)
-            earnings: '$totalEarnings',       // already display earnings
-            snapshotAt: '$snapshotAt',
+            _id: 1,
+            // Apply 4:1 ratio to match what creators see on their own dashboard
+            validViews:    { $floor: { $divide: ['$validViews',    VIEW_TO_COUNTED_RATIO] } },
+            rejectedViews: { $floor: { $divide: ['$rejectedViews', VIEW_TO_COUNTED_RATIO] } },
+            earnings:      1,
             creator: { name: '$creator.name', email: '$creator.email' }
           }
         }
