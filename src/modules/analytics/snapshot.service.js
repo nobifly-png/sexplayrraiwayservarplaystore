@@ -11,15 +11,10 @@ const logger = require('../../config/logger');
 const calculateCountedViews = (realViews) => Math.floor(realViews / VIEW_TO_COUNTED_RATIO);
 
 /**
- * Calculate display earnings aligned to complete 4-session sets.
- * Partial earnings (< 4 sessions) are hidden.
+ * Return actual earnings stored in DB — no recalculation needed.
+ * Earnings were credited at write time per valid view.
  */
-const calculateDisplayEarnings = (realViews, totalEarnings) => {
-  const completeViews = Math.floor(realViews / VIEW_TO_COUNTED_RATIO);
-  if (completeViews === 0 || realViews === 0) return 0;
-  const earningsPerSession = totalEarnings / realViews;
-  return completeViews * VIEW_TO_COUNTED_RATIO * earningsPerSession;
-};
+const calculateDisplayEarnings = (_realViews, totalEarnings) => totalEarnings;
 
 class SnapshotService {
   /**
