@@ -19,7 +19,7 @@ const createRateLimiter = (windowMs, max) => {
 
 const generalLimiter = createRateLimiter();
 const authLimiter = createRateLimiter(15 * 60 * 1000, authRateLimitMax);
-const playbackLimiter = createRateLimiter(60 * 1000, 30);
+const playbackLimiter = createRateLimiter(60 * 1000, 60);
 /** Super-admin routes: /api/admin, /api/settings, /api/fraud */
 const adminLimiter = createRateLimiter(15 * 60 * 1000, adminRateLimitMax);
 /** POST /api/withdrawals */
