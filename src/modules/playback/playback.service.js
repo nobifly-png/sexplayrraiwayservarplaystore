@@ -84,20 +84,24 @@ class PlaybackService {
       const lastPosition = session.lastPositionSeconds ?? session.watchTimeSeconds ?? 0;
       const increment = nextPosition - lastPosition;
 
-      // Allow: real elapsed + 10s buffer (covers first event, network delay, player buffering)
-      // Block only truly impossible jumps far beyond wall-clock time
-      const allowedIncrement = elapsedSeconds + 10;
+      // Allow: real elapsed + 60s buffer
+      // Native app gets +10s; browser player needs more headroom because:
+      // - First PROGRESS event may arrive after video has already been playing
+      // - Network/buffering delays are larger in browser
+      // - User may seek forward before first event fires
+      const allowedIncrement = elapsedSeconds + 60;
 
       if (increment < 0) {
         // Backward seek — allow without flagging (no fraud system)
       } else if (increment > allowedIncrement) {
-        throw new BadRequestError('Unrealistic playback progression detected');
-      }
-
-      session.lastPositionSeconds = nextPosition;
-
-      if (nextPosition > session.watchTimeSeconds) {
-        session.watchTimeSeconds = nextPosition;
+        // Silently ignore rather than throw — browser players legitimately
+        // send large jumps on first event; don't break the session
+        logger.warn({ sessionId: data.sessionId, increment, allowedIncrement }, 'Playback: large progression ignored');
+        // Still update position so next events work correctly
+        session.lastPositionSeconds = nextPosition;
+        if (nextPosition > session.watchTimeSeconds) {
+          session.watchTimeSeconds = nextPosition;
+        }
       }
     }
 
