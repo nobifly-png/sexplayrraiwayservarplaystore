@@ -5,10 +5,8 @@ const { publicBaseUrl } = require('../config/r2');
 
 const DEFAULT_THUMBNAIL_URL = process.env.DEFAULT_THUMBNAIL_URL || '';
 const BACKEND_URL = (process.env.APP_URL || '').replace(/^["']|["']$/g, '');
-// API base is always the Railway backend URL — not the frontend domain
-const RAILWAY_URL = (process.env.RAILWAY_PUBLIC_DOMAIN
-  ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
-  : process.env.BACKEND_URL || process.env.APP_URL || '').replace(/^["']|["']$/g, '');
+// API base: use BACKEND_URL env var (Railway URL), fallback to empty string (same-origin relative)
+const RAILWAY_URL = (process.env.BACKEND_URL || '').replace(/^["']|["']$/g, '');
 const APP_LOGO_URL = process.env.APP_LOGO_URL || '';
 
 const router = express.Router();
