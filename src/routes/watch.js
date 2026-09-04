@@ -318,11 +318,22 @@ ${errorMsg ? `
     }
 
     function post(path, body) {
-      return fetch(API_BASE + path, {
+      var url = API_BASE + path;
+      console.log('[DEBUG] POST', url, body); // Debug log
+      return fetch(url, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(body)
-      }).then(function (r) { return r.json(); });
+      }).then(function (r) {
+        console.log('[DEBUG] Response status:', r.status, r.ok); // Debug log
+        return r.json();
+      }).then(function (json) {
+        console.log('[DEBUG] Response JSON:', json); // Debug log
+        return json;
+      }).catch(function (err) {
+        console.error('[DEBUG] Fetch error:', err); // Debug log
+        throw err;
+      });
     }
 
     // ── 1. Create playback session on page load ───────────────────────────────
