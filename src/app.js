@@ -32,7 +32,7 @@ app.use('/api', routes);
 app.get('/app-version.json', (req, res) => {
   res.json({
     latestVersion: '1.3.7',
-    latestBuildNumber: 29,
+    latestBuildNumber: 30,
     releaseNotes: 'Performance improvements and bug fixes.',
     downloadUrl: 'https://play.google.com/store/apps/details?id=com.novax.player.novax_player',
     forceUpdate: true
@@ -43,7 +43,7 @@ app.get('/app-version.json', (req, res) => {
 app.get('/api/app/version', (req, res) => {
   res.json({
     latestVersion: '1.3.7',
-    latestBuildNumber: 29,
+    latestBuildNumber: 30,
     releaseNotes: 'Performance improvements and bug fixes.',
     downloadUrl: 'https://play.google.com/store/apps/details?id=com.novax.player.novax_player',
     forceUpdate: true
