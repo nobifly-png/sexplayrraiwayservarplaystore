@@ -31,11 +31,22 @@ app.use('/api', routes);
 // forceUpdate: false → user can dismiss (normal updates)
 app.get('/app-version.json', (req, res) => {
   res.json({
-    latestVersion: '1.3.0',
-    latestBuildNumber: 17,
-    releaseNotes: 'Bug fixes aur performance improvements',
+    latestVersion: '1.3.7',
+    latestBuildNumber: 29,
+    releaseNotes: 'Performance improvements and bug fixes.',
     downloadUrl: 'https://play.google.com/store/apps/details?id=com.novax.player.novax_player',
-    forceUpdate: false
+    forceUpdate: true
+  });
+});
+
+// Also expose via /api/app/version for Flutter app compatibility
+app.get('/api/app/version', (req, res) => {
+  res.json({
+    latestVersion: '1.3.7',
+    latestBuildNumber: 29,
+    releaseNotes: 'Performance improvements and bug fixes.',
+    downloadUrl: 'https://play.google.com/store/apps/details?id=com.novax.player.novax_player',
+    forceUpdate: true
   });
 });
 
